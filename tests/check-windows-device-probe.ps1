@@ -9,6 +9,9 @@ $base = Get-Content -LiteralPath $Baseline -Raw | ConvertFrom-Json
 $first = Get-Content -LiteralPath $ManagedA -Raw | ConvertFrom-Json
 $second = Get-Content -LiteralPath $ManagedB -Raw | ConvertFrom-Json
 
+if ($first.FatalError) { throw "First managed probe failed: $($first.FatalError)" }
+if ($second.FatalError) { throw "Second managed probe failed: $($second.FatalError)" }
+
 function Check([bool]$condition, [string]$message) {
     if (-not $condition) { throw $message }
 }

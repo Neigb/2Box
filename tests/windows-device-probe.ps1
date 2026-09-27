@@ -1,10 +1,11 @@
 param(
-    [Parameter(Mandatory = $true)][string]$Output
+    [Parameter(Mandatory = $true)][string]$Output,
+    [Parameter(Mandatory = $true)][string]$NativeAssembly
 )
 
 $ErrorActionPreference = 'Stop'
 
-Add-Type -ReferencedAssemblies 'System.Management' -TypeDefinition @'
+$nativeDefinition = @'
 using System;
 using System.Collections.Generic;
 using System.Management;
@@ -186,6 +187,14 @@ public static class DeviceProbeNative
 }
 '@
 
+try {
+if (Test-Path -LiteralPath $NativeAssembly) {
+    Add-Type -LiteralPath $NativeAssembly
+} else {
+    Add-Type -ReferencedAssemblies 'System.Management' -TypeDefinition $nativeDefinition `
+        -OutputAssembly $NativeAssembly -PassThru | Out-Null
+}
+
 $disk = Get-WmiObject -Namespace 'root\cimv2' -Class Win32_DiskDrive | Select-Object -First 1
 $bios = Get-WmiObject -Namespace 'root\cimv2' -Class Win32_BIOS | Select-Object -First 1
 $systemProduct = Get-WmiObject -Namespace 'root\cimv2' -Class Win32_ComputerSystemProduct | Select-Object -First 1
@@ -217,3 +226,10 @@ $result = [ordered]@{
 }
 
 $result | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding UTF8
+} catch {
+    [ordered]@{
+        ProcessId = $PID
+        FatalError = $_.Exception.ToString()
+    } | ConvertTo-Json | Set-Content -LiteralPath $Output -Encoding UTF8
+    exit 1
+}

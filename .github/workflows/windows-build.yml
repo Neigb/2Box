@@ -61,11 +61,12 @@ jobs:
           $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
           $managedA = Join-Path $env:RUNNER_TEMP 'device-probe-managed-a.json'
           $managedB = Join-Path $env:RUNNER_TEMP 'device-probe-managed-b.json'
+          $nativeAssembly = Join-Path $env:RUNNER_TEMP 'device-probe-native.dll'
           $env:WORKSPACE_DIAGNOSTIC_FILE = Join-Path $env:RUNNER_TEMP 'device-probe-injection.log'
-          & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline
+          & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline -NativeAssembly $nativeAssembly
           if ($LASTEXITCODE -ne 0) { throw "Baseline probe failed: $LASTEXITCODE" }
           foreach ($output in @($managedA, $managedB)) {
-            & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output
+            & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output -NativeAssembly $nativeAssembly
             if ($LASTEXITCODE -ne 0) { throw "Managed launch failed: $LASTEXITCODE" }
             $deadline = (Get-Date).AddSeconds(45)
             while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) {
