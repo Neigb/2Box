@@ -31,3 +31,53 @@ jobs:
           /p:Configuration=${{ matrix.configuration }}
           /p:Platform=${{ matrix.platform }}
           /verbosity:minimal
+
+      - name: Check packaged branding strings
+        if: matrix.configuration == 'Release' && matrix.platform == 'x64'
+        shell: pwsh
+        run: |
+          $files = @(
+            (Join-Path $env:GITHUB_WORKSPACE 'bin\x64\WorkspaceHost.exe'),
+            (Join-Path $env:GITHUB_WORKSPACE 'bin\x64\WorkspaceCli.exe')
+          )
+          $files += @(Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE '2Box\res\embed_dll') -Filter '*.dll' -Recurse |
+            Select-Object -ExpandProperty FullName)
+          foreach ($file in $files) {
+            $content = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes($file))
+            if ($content -match '(?i)2box' -or $content -match '2\x00[bB]\x00[oO]\x00[xX]\x00') {
+              throw "Legacy branding found in packaged binary: $file"
+            }
+          }
+
+      - name: Probe managed device queries
+        if: matrix.configuration == 'Release' && matrix.platform == 'x64'
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $probe = Join-Path $env:GITHUB_WORKSPACE 'tests\windows-device-probe.ps1'
+          $check = Join-Path $env:GITHUB_WORKSPACE 'tests\check-windows-device-probe.ps1'
+          $cli = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\WorkspaceCli.exe'
+          $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
+          $managedA = Join-Path $env:RUNNER_TEMP 'device-probe-managed-a.json'
+          $managedB = Join-Path $env:RUNNER_TEMP 'device-probe-managed-b.json'
+          & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline
+          if ($LASTEXITCODE -ne 0) { throw "Baseline probe failed: $LASTEXITCODE" }
+          foreach ($output in @($managedA, $managedB)) {
+            & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output
+            if ($LASTEXITCODE -ne 0) { throw "Managed launch failed: $LASTEXITCODE" }
+            $deadline = (Get-Date).AddSeconds(45)
+            while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) {
+              Start-Sleep -Milliseconds 500
+            }
+            if (!(Test-Path -LiteralPath $output)) { throw "Managed probe did not finish: $output" }
+          }
+          & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
+
+      - name: Upload device probe results
+        if: always() && matrix.configuration == 'Release' && matrix.platform == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-probe-results
+          path: ${{ runner.temp }}\device-probe-*.json
+          if-no-files-found: ignore

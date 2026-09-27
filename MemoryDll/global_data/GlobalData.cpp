@@ -105,14 +105,74 @@ namespace global
 	{
 		const std::string normalized = normalize_disk_serial(serial, ataWordOrder);
 		if (normalized.empty()) return {};
+		std::lock_guard lock(m_diskMutex);
+		if (const auto found = m_virtualDiskSerials.find(normalized); found != m_virtualDiskSerials.end())
+		{
+			return found->second;
+		}
 		std::string result = std::format("{:016X}", hash_identity(m_envFlag ^ 0x4449534BULL, normalized));
 		result.resize(std::min(result.size(), normalized.size()));
+		m_virtualDiskSerials.emplace(normalized, result);
+		m_virtualDiskSerials.emplace(result, result);
 		return result;
+	}
+
+	std::string Data::virtualGuid(std::string_view guid) const
+	{
+		const std::string_view source = guid;
+		const bool wrapped = guid.size() == 38 && guid.front() == '{' && guid.back() == '}';
+		if (wrapped) guid = guid.substr(1, 36);
+		if (guid.size() != 36) return std::string{source};
+		std::string normalized{guid};
+		for (std::size_t i = 0; i < normalized.size(); ++i)
+		{
+			char& c = normalized[i];
+			if (i == 8 || i == 13 || i == 18 || i == 23)
+			{
+				if (c != '-') return std::string{source};
+			}
+			else if (c >= 'a' && c <= 'f') c = static_cast<char>(c - 'a' + 'A');
+			else if (!((c >= 'A' && c <= 'F') || (c >= '0' && c <= '9')))
+				return std::string{source};
+		}
+		std::lock_guard lock(m_guidMutex);
+		std::string result;
+		if (const auto found = m_virtualGuids.find(normalized); found != m_virtualGuids.end())
+		{
+			result = found->second;
+		}
+		else
+		{
+			std::string hex = std::format("{:016X}{:016X}",
+				hash_identity(m_envFlag ^ 0x4755494441ULL, normalized),
+				hash_identity(m_envFlag ^ 0x4755494442ULL, normalized));
+			hex[12] = '4';
+			hex[16] = '8';
+			result = std::format("{}-{}-{}-{}-{}", hex.substr(0, 8), hex.substr(8, 4),
+				hex.substr(12, 4), hex.substr(16, 4), hex.substr(20));
+			m_virtualGuids.emplace(normalized, result);
+			m_virtualGuids.emplace(result, result);
+		}
+		return wrapped ? std::format("{{{}}}", result) : result;
 	}
 
 	void Data::virtualMac(std::uint8_t* address, std::size_t length) const
 	{
 		if (!address || length != 6) return;
+		std::uint64_t originalKey = 0;
+		for (std::size_t i = 0; i < length; ++i)
+		{
+			originalKey |= std::uint64_t{address[i]} << (i * 8);
+		}
+		std::lock_guard lock(m_macMutex);
+		if (const auto found = m_virtualMacs.find(originalKey); found != m_virtualMacs.end())
+		{
+			for (std::size_t i = 0; i < length; ++i)
+			{
+				address[i] = static_cast<std::uint8_t>(found->second >> (i * 8));
+			}
+			return;
+		}
 		const std::string_view source{reinterpret_cast<const char*>(address), length};
 		const std::uint64_t hash = hash_identity(m_envFlag ^ 0x4D4143ULL, source);
 		const std::array original{address[3], address[4], address[5]};
@@ -124,6 +184,17 @@ namespace global
 		{
 			address[5] ^= 1;
 		}
+		std::uint64_t virtualKey = 0;
+		for (std::size_t i = 0; i < length; ++i)
+		{
+			virtualKey |= std::uint64_t{address[i]} << (i * 8);
+		}
+		try
+		{
+			m_virtualMacs.emplace(originalKey, virtualKey);
+			m_virtualMacs.emplace(virtualKey, virtualKey);
+		}
+		catch (...) {}
 	}
 
 	void Data::initialize(SystemVersionInfo versionInfo, std::uint64_t envFlag, unsigned long envIndex, std::wstring_view rootPath)

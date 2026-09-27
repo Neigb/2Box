@@ -66,6 +66,7 @@ namespace global
 		HKEY appKey() const { return m_appKey; }
 		std::uint32_t inputSyncMsgId() const { return m_inputSyncMsgId; }
 		std::string virtualDiskSerial(std::string_view serial, bool ataWordOrder = false) const;
+		std::string virtualGuid(std::string_view guid) const;
 		void virtualMac(std::uint8_t* address, std::size_t length) const;
 
 		bool isInKnownFolderPath(std::wstring_view path) const;
@@ -92,6 +93,12 @@ namespace global
 		RegKey m_appKey;
 		std::vector<std::wstring> m_knownFolders;
 		std::uint32_t m_inputSyncMsgId{0};
+		mutable std::mutex m_diskMutex;
+		mutable std::unordered_map<std::string, std::string> m_virtualDiskSerials;
+		mutable std::mutex m_guidMutex;
+		mutable std::unordered_map<std::string, std::string> m_virtualGuids;
+		mutable std::mutex m_macMutex;
+		mutable std::unordered_map<std::uint64_t, std::uint64_t> m_virtualMacs;
 	};
 
 	export bool is_app_key_name(std::wstring_view fullName)

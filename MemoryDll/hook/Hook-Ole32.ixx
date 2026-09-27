@@ -1,4 +1,7 @@
 module;
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Wbemidl.h>
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "OleAut32.lib")

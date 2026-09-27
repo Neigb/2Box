@@ -98,6 +98,27 @@ namespace
 		return pathWrapper.dataPath;
 	}
 
+	void migrate_existing_hive(const std::filesystem::path& target)
+	{
+		if (std::filesystem::exists(target)) return;
+		std::optional<std::filesystem::path> source;
+		try
+		{
+			for (const auto& entry : std::filesystem::directory_iterator{target.parent_path()})
+			{
+				if (!entry.is_regular_file() || entry.path() == target) continue;
+				std::ifstream file{entry.path(), std::ios::binary};
+				std::array<char, 4> header{};
+				file.read(header.data(), header.size());
+				if (!file || std::string_view{header.data(), header.size()} != "regf") continue;
+				if (source) return;
+				source = entry.path();
+			}
+			if (source) std::filesystem::rename(*source, target);
+		}
+		catch (...) {}
+	}
+
 	const biz::RegKey& get_app_key()
 	{
 		namespace fs = std::filesystem;
@@ -109,6 +130,7 @@ namespace
 					[&]()-> HKEY
 					{
 						fs::path path = fs::weakly_canonical(get_data_path() / fs::path{MainApp::appName});
+						migrate_existing_hive(path);
 						HKEY hAppKey;
 						if (LSTATUS status = RegLoadAppKeyW(path.native().c_str(), &hAppKey, KEY_ALL_ACCESS, 0, 0);
 							status != ERROR_SUCCESS)

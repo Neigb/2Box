@@ -8,8 +8,16 @@ namespace hook
 		IWbemContext*, IWbemClassObject**, IWbemCallResult**);
 	using WmiCreateEnum = HRESULT (STDMETHODCALLTYPE*)(IWbemServices*, const BSTR, long,
 		IWbemContext*, IEnumWbemClassObject**);
+	using WmiQueryAsync = HRESULT (STDMETHODCALLTYPE*)(IWbemServices*, const BSTR, const BSTR,
+		long, IWbemContext*, IWbemObjectSink*);
+	using WmiGetObjectAsync = HRESULT (STDMETHODCALLTYPE*)(IWbemServices*, const BSTR,
+		long, IWbemContext*, IWbemObjectSink*);
+	using WmiCreateEnumAsync = HRESULT (STDMETHODCALLTYPE*)(IWbemServices*, const BSTR,
+		long, IWbemContext*, IWbemObjectSink*);
+	using WmiSinkIndicate = HRESULT (STDMETHODCALLTYPE*)(IWbemObjectSink*, long, IWbemClassObject**);
 	using WmiEnumNext = HRESULT (STDMETHODCALLTYPE*)(IEnumWbemClassObject*, long, ULONG,
 		IWbemClassObject**, ULONG*);
+	using WmiCallResultGet = HRESULT (STDMETHODCALLTYPE*)(IWbemCallResult*, long, IWbemClassObject**);
 	using WmiGet = HRESULT (STDMETHODCALLTYPE*)(IWbemClassObject*, LPCWSTR, long, VARIANT*, CIMTYPE*, long*);
 	using WmiNext = HRESULT (STDMETHODCALLTYPE*)(IWbemClassObject*, long, BSTR*, VARIANT*, CIMTYPE*, long*);
 
@@ -18,7 +26,12 @@ namespace hook
 	WmiQuery originalWmiQuery{};
 	WmiGetObject originalWmiGetObject{};
 	WmiCreateEnum originalWmiCreateEnum{};
+	WmiQueryAsync originalWmiQueryAsync{};
+	WmiGetObjectAsync originalWmiGetObjectAsync{};
+	WmiCreateEnumAsync originalWmiCreateEnumAsync{};
+	WmiSinkIndicate originalWmiSinkIndicate{};
 	WmiEnumNext originalWmiEnumNext{};
+	WmiCallResultGet originalWmiCallResultGet{};
 	WmiGet originalWmiGet{};
 	WmiNext originalWmiNext{};
 
@@ -84,8 +97,9 @@ namespace hook
 		}
 		global::Data::get().virtualMac(bytes.data(), bytes.size());
 		return std::format(L"{:02X}{}{:02X}{}{:02X}{}{:02X}{}{:02X}{}{:02X}",
-			bytes[0], delimiter, bytes[1], delimiter, bytes[2], delimiter,
-			bytes[3], delimiter, bytes[4], delimiter, bytes[5]);
+			static_cast<unsigned>(bytes[0]), delimiter, static_cast<unsigned>(bytes[1]), delimiter,
+			static_cast<unsigned>(bytes[2]), delimiter, static_cast<unsigned>(bytes[3]), delimiter,
+			static_cast<unsigned>(bytes[4]), delimiter, static_cast<unsigned>(bytes[5]));
 	}
 
 	std::optional<std::wstring> wmi_virtual_value(std::wstring_view className, std::wstring_view property,
@@ -94,27 +108,23 @@ namespace hook
 		const bool disk = wmi_equal(className, L"Win32_DiskDrive") || wmi_equal(className, L"Win32_PhysicalMedia");
 		const bool platform = wmi_equal(className, L"Win32_BIOS") || wmi_equal(className, L"Win32_BaseBoard")
 			|| wmi_equal(className, L"Win32_ComputerSystemProduct") || wmi_equal(className, L"Win32_Processor");
-		const bool adapter = wmi_equal(className, L"Win32_NetworkAdapter");
+		const bool adapter = wmi_equal(className, L"Win32_NetworkAdapter")
+			|| wmi_equal(className, L"Win32_NetworkAdapterConfiguration");
 		if (adapter && wmi_equal(property, L"MACAddress")) return wmi_virtual_mac(source);
 		const auto ascii = wmi_ascii(source);
 		if (!ascii || ascii->empty()) return std::nullopt;
+		if ((wmi_equal(className, L"Win32_ComputerSystemProduct") && wmi_equal(property, L"UUID"))
+			|| (adapter && (wmi_equal(property, L"GUID") || wmi_equal(property, L"SettingID"))))
+		{
+			const std::string value = global::Data::get().virtualGuid(*ascii);
+			if (value == *ascii) return std::nullopt;
+			return std::wstring{value.begin(), value.end()};
+		}
 		if ((disk || platform) && (wmi_equal(property, L"SerialNumber")
 			|| wmi_equal(property, L"IdentifyingNumber") || wmi_equal(property, L"ProcessorId")))
 		{
 			const std::string serial = global::Data::get().virtualDiskSerial(*ascii);
 			return std::wstring{serial.begin(), serial.end()};
-		}
-		if (wmi_equal(className, L"Win32_ComputerSystemProduct") && wmi_equal(property, L"UUID"))
-		{
-			const std::string a = global::Data::get().virtualDiskSerial(*ascii);
-			const std::string b = global::Data::get().virtualDiskSerial(*ascii + "UUID");
-			if (a.size() != 16 || b.size() != 16) return std::nullopt;
-			std::wstring hex{a.begin(), a.end()};
-			hex.append(b.begin(), b.end());
-			hex[12] = L'4';
-			hex[16] = L'8';
-			return std::format(L"{}-{}-{}-{}-{}", hex.substr(0, 8), hex.substr(8, 4),
-				hex.substr(12, 4), hex.substr(16, 4), hex.substr(20));
 		}
 		if ((disk || adapter) && wmi_equal(property, L"PNPDeviceID"))
 		{
@@ -185,13 +195,30 @@ namespace hook
 		watch_wmi_method(object, 9, originalWmiNext, &wmi_next);
 	}
 
+	HRESULT STDMETHODCALLTYPE wmi_sink_indicate(IWbemObjectSink* sink, long count,
+		IWbemClassObject** objects)
+	{
+		const DWORD error = GetLastError();
+		if (count > 0 && objects)
+		{
+			for (long i = 0; i < count; ++i) watch_wmi_object(objects[i]);
+		}
+		SetLastError(error);
+		return originalWmiSinkIndicate(sink, count, objects);
+	}
+
+	void watch_wmi_sink(IWbemObjectSink* sink)
+	{
+		watch_wmi_method(sink, 3, originalWmiSinkIndicate, &wmi_sink_indicate);
+	}
+
 	HRESULT STDMETHODCALLTYPE wmi_enum_next(IEnumWbemClassObject* enumeration, long timeout, ULONG count,
 		IWbemClassObject** objects, ULONG* returned)
 	{
 		const HRESULT result = originalWmiEnumNext(enumeration, timeout, count, objects, returned);
 		const DWORD error = GetLastError();
 		if (SUCCEEDED(result) && objects && returned)
-			for (ULONG i = 0; i < std::min(count, *returned); ++i) watch_wmi_object(objects[i]);
+			for (ULONG i = 0; i < count && i < *returned; ++i) watch_wmi_object(objects[i]);
 		SetLastError(error);
 		return result;
 	}
@@ -199,6 +226,48 @@ namespace hook
 	void watch_wmi_enum(IEnumWbemClassObject* enumeration)
 	{
 		watch_wmi_method(enumeration, 4, originalWmiEnumNext, &wmi_enum_next);
+	}
+
+	HRESULT STDMETHODCALLTYPE wmi_call_result_get(IWbemCallResult* resultObject, long timeout,
+		IWbemClassObject** object)
+	{
+		const HRESULT result = originalWmiCallResultGet(resultObject, timeout, object);
+		const DWORD error = GetLastError();
+		if (SUCCEEDED(result) && object) watch_wmi_object(*object);
+		SetLastError(error);
+		return result;
+	}
+
+	void watch_wmi_call_result(IWbemCallResult* result)
+	{
+		watch_wmi_method(result, 3, originalWmiCallResultGet, &wmi_call_result_get);
+	}
+
+	HRESULT STDMETHODCALLTYPE wmi_query_async(IWbemServices* service, const BSTR language,
+		const BSTR query, long flags, IWbemContext* context, IWbemObjectSink* sink)
+	{
+		const DWORD error = GetLastError();
+		watch_wmi_sink(sink);
+		SetLastError(error);
+		return originalWmiQueryAsync(service, language, query, flags, context, sink);
+	}
+
+	HRESULT STDMETHODCALLTYPE wmi_get_object_async(IWbemServices* service, const BSTR path,
+		long flags, IWbemContext* context, IWbemObjectSink* sink)
+	{
+		const DWORD error = GetLastError();
+		watch_wmi_sink(sink);
+		SetLastError(error);
+		return originalWmiGetObjectAsync(service, path, flags, context, sink);
+	}
+
+	HRESULT STDMETHODCALLTYPE wmi_create_enum_async(IWbemServices* service, const BSTR filter,
+		long flags, IWbemContext* context, IWbemObjectSink* sink)
+	{
+		const DWORD error = GetLastError();
+		watch_wmi_sink(sink);
+		SetLastError(error);
+		return originalWmiCreateEnumAsync(service, filter, flags, context, sink);
 	}
 
 	HRESULT STDMETHODCALLTYPE wmi_query(IWbemServices* service, const BSTR language, const BSTR query,
@@ -217,6 +286,7 @@ namespace hook
 		const HRESULT result = originalWmiGetObject(service, path, flags, context, object, callResult);
 		const DWORD error = GetLastError();
 		if (SUCCEEDED(result) && object) watch_wmi_object(*object);
+		if (SUCCEEDED(result) && callResult) watch_wmi_call_result(*callResult);
 		SetLastError(error);
 		return result;
 	}
@@ -234,8 +304,11 @@ namespace hook
 	void watch_wmi_service(IWbemServices* service)
 	{
 		watch_wmi_method(service, 6, originalWmiGetObject, &wmi_get_object);
+		watch_wmi_method(service, 7, originalWmiGetObjectAsync, &wmi_get_object_async);
 		watch_wmi_method(service, 18, originalWmiCreateEnum, &wmi_create_enum);
+		watch_wmi_method(service, 19, originalWmiCreateEnumAsync, &wmi_create_enum_async);
 		watch_wmi_method(service, 20, originalWmiQuery, &wmi_query);
+		watch_wmi_method(service, 21, originalWmiQueryAsync, &wmi_query_async);
 	}
 
 	HRESULT STDMETHODCALLTYPE wmi_connect(IWbemLocator* locator, const BSTR resource, const BSTR user,

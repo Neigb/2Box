@@ -204,7 +204,7 @@ namespace biz
 	// 		app().get_scheduler().addTask([errorMsg = std::string{e.what()}]
 	// 		{
 	// 			// ReSharper disable once StringLiteralTypo
-	// 			throw std::runtime_error{std::format("The current system file analysis has failed, 2Box cannot run properly\nerror msg: {}", errorMsg)};
+	// 			throw std::runtime_error{std::format("The current system file analysis has failed, the application cannot run properly\nerror msg: {}", errorMsg)};
 	// 		});
 	// 	}
 	// 	catch (...)
@@ -212,7 +212,7 @@ namespace biz
 	// 		app().get_scheduler().addTask([]
 	// 		{
 	// 			// ReSharper disable once StringLiteralTypo
-	// 			throw std::runtime_error("The current system file analysis has failed, 2Box cannot run properly\nerror msg: Unknown error");
+	// 			throw std::runtime_error("The current system file analysis has failed, the application cannot run properly\nerror msg: Unknown error");
 	// 		});
 	// 	}
 	// }

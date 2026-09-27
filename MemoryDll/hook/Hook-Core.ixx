@@ -25,12 +25,23 @@ namespace hook
 
 		void installAll()
 		{
-			DetourTransactionBegin();
-			DetourUpdateThread(GetCurrentThread());
+			if (const LONG error = DetourTransactionBegin(); error != NO_ERROR)
+			{
+				throw std::runtime_error(std::format("DetourTransactionBegin() failed with error {}", error));
+			}
+			if (const LONG error = DetourUpdateThread(GetCurrentThread()); error != NO_ERROR)
+			{
+				DetourTransactionAbort();
+				throw std::runtime_error(std::format("DetourUpdateThread() failed with error {}", error));
+			}
 
 			for (const HookInfo& hook : m_hooks)
 			{
-				DetourAttach(hook.sourceAddr, hook.targetAddr);
+				if (const LONG error = DetourAttach(hook.sourceAddr, hook.targetAddr); error != NO_ERROR)
+				{
+					DetourTransactionAbort();
+					throw std::runtime_error(std::format("DetourAttach() failed with error {}", error));
+				}
 			}
 
 			if (const LONG error = DetourTransactionCommit(); error != NO_ERROR)

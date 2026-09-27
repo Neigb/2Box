@@ -64,7 +64,7 @@ void initialize_rpc()
 #if !ALLOW_HOST_EXIT
 			if (boxHandle == nullptr)
 			{
-				TerminateProcess(GetCurrentProcess(), 0);
+				TerminateProcess(GetCurrentProcess(), 1);
 			}
 #endif
 			quitEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -110,7 +110,7 @@ void initialize_rpc()
 					}
 					catch (...)
 					{
-						TerminateProcess(GetCurrentProcess(), 0);
+						TerminateProcess(GetCurrentProcess(), 1);
 					}
 				}
 				if (boxHandle)
@@ -119,7 +119,7 @@ void initialize_rpc()
 					DWORD index = WaitForMultipleObjects(static_cast<DWORD>(handles.size()), handles.data(), FALSE, INFINITE);
 					if (index >= handles.size())
 					{
-						TerminateProcess(GetCurrentProcess(), 0);
+						TerminateProcess(GetCurrentProcess(), 1);
 					}
 					if (handles[index] == quitEvent)
 					{
@@ -129,7 +129,7 @@ void initialize_rpc()
 					boxHandle = nullptr;
 				}
 #if !ALLOW_HOST_EXIT
-				TerminateProcess(GetCurrentProcess(), 0);
+				TerminateProcess(GetCurrentProcess(), 1);
 #endif
 				std::this_thread::sleep_for(std::chrono::seconds(1));
 			}
@@ -152,8 +152,13 @@ void biz_initialize(SystemVersionInfo versionInfo, unsigned long long envFlag, u
 		initialize_rpc();
 		initialize_hook();
 	}
+	catch (const std::exception& error)
+	{
+		OutputDebugStringA(error.what());
+		TerminateProcess(GetCurrentProcess(), 1);
+	}
 	catch (...)
 	{
-		TerminateProcess(GetCurrentProcess(), 0);
+		TerminateProcess(GetCurrentProcess(), 1);
 	}
 }

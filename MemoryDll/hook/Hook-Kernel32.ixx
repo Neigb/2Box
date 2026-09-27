@@ -475,6 +475,7 @@ namespace hook
 		                       lpInBuffer, nInBufferSize,
 		                       lpOutBuffer, nOutBufferSize,
 		                       lpBytesReturned, nullptr);
+		const DWORD originalError = GetLastError();
 		if (!bRet)
 		{
 			return bRet;
@@ -485,6 +486,7 @@ namespace hook
 		}
 		MYOUT* pOut = reinterpret_cast<MYOUT*>(static_cast<SENDCMDOUTPARAMS*>(lpOutBuffer)->bBuffer);
 		rewrite_ata_serial(pOut->struMy.sSerialNumber);
+		SetLastError(originalError);
 		return bRet;
 	}
 
@@ -516,6 +518,7 @@ namespace hook
 		                       lpInBuffer, nInBufferSize,
 		                       lpOutBuffer, nOutBufferSize,
 		                       lpBytesReturned, nullptr);
+		const DWORD originalError = GetLastError();
 		if (!bRet)
 		{
 			return bRet;
@@ -527,6 +530,7 @@ namespace hook
 		SENDCMDOUTPARAMS* pOutParams = reinterpret_cast<SENDCMDOUTPARAMS*>(static_cast<char*>(lpOutBuffer) + sizeof(SRB_IO_CONTROL));
 		MYOUT* pOut = reinterpret_cast<MYOUT*>(pOutParams->bBuffer);
 		rewrite_ata_serial(pOut->struMy.sSerialNumber);
+		SetLastError(originalError);
 		return bRet;
 	}
 
@@ -536,7 +540,7 @@ namespace hook
 	                                                      LPVOID lpOutBuffer, DWORD nOutBufferSize,
 	                                                      LPDWORD lpBytesReturned, LPOVERLAPPED lpOverlapped)
 	{
-		if (nInBufferSize < sizeof(STORAGE_PROPERTY_QUERY))
+		if (nInBufferSize < FIELD_OFFSET(STORAGE_PROPERTY_QUERY, AdditionalParameters))
 		{
 			return std::nullopt;
 		}
@@ -557,6 +561,7 @@ namespace hook
 		                       lpInBuffer, nInBufferSize,
 		                       lpOutBuffer, nOutBufferSize,
 		                       lpBytesReturned, nullptr);
+		const DWORD originalError = GetLastError();
 		if (!bRet)
 		{
 			return bRet;
@@ -567,6 +572,7 @@ namespace hook
 		}
 		const DWORD returnedSize = lpBytesReturned ? std::min(*lpBytesReturned, nOutBufferSize) : nOutBufferSize;
 		rewrite_storage_serial(lpOutBuffer, returnedSize);
+		SetLastError(originalError);
 		return bRet;
 	}
 
