@@ -270,7 +270,7 @@ namespace ui
 		// }
 		if (isPage<HomePage>() && getPage<HomePage>().getLeftSidebar()->getEnvBoxCardArea()->hasAnyProcesses())
 		{
-			if (MessageBoxW(nativeHandle(), L"仍有正在运行的进程，关闭2Box会强制结束这些进程，确定退出吗？", MainApp::appName.data(), MB_OKCANCEL) != IDOK)
+			if (MessageBoxW(nativeHandle(), L"仍有正在运行的进程，关闭程序会强制结束这些进程，确定退出吗？", MainApp::appName.data(), MB_OKCANCEL) != IDOK)
 			{
 				return true;
 			}

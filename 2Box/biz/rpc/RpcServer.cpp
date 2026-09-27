@@ -12,12 +12,13 @@ namespace rpc
 {
 	Server::Server()
 	{
-		RPC_STATUS status = RpcServerUseProtseqEpA(RPC_CSTR("ncalrpc"), RPC_C_LISTEN_MAX_CALLS_DEFAULT, RPC_CSTR("{63B40BDA-A2D1-4516-BDBB-E1E2A960D31E}2BoxServer"), nullptr);
+		RPC_STATUS status = RpcServerUseProtseqEpA(RPC_CSTR("ncalrpc"), RPC_C_LISTEN_MAX_CALLS_DEFAULT, RPC_CSTR("{63B40BDA-A2D1-4516-BDBB-E1E2A960D31E}"), nullptr);
 		if (status != RPC_S_OK)
 		{
 			if (status == RPC_S_DUPLICATE_ENDPOINT)
 			{
-				MessageBoxW(nullptr, L"2Box已经运行", L"2Box", MB_OK);
+				const std::wstring message = std::format(L"{} 已在运行", MainApp::appName);
+				MessageBoxW(nullptr, message.c_str(), MainApp::appName.data(), MB_OK);
 				throw std::runtime_error{""};
 			}
 			// ReSharper disable once StringLiteralTypo

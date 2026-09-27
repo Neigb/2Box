@@ -1,10 +1,12 @@
+module;
+#include <Wbemidl.h>
+#pragma comment(lib, "wbemuuid.lib")
+#pragma comment(lib, "OleAut32.lib")
 export module Hook:Ole32;
 
-namespace hook
-{
-	void hook_ole32()
-	{
-		// Keep WMI available. Device-specific WMI result virtualization must be
-		// implemented at the result interface rather than failing COM activation.
-	}
-}
+import "sys_defs.h";
+import std;
+import :Core;
+import GlobalData;
+
+#include "WmiResult.inl"

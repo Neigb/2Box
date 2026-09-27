@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ 生成的包含文件。
-// 供 2Box.rc 使用
+// 供 app.rc 使用
 //
 #define IDI_APP_ICON                    101
 #define IDR_MEM_DLL_32                  102

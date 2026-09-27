@@ -17,13 +17,10 @@ namespace
 	{
 		PROCESS_INFORMATION procInfo = {nullptr};
 		STARTUPINFOW startupInfo = {sizeof(startupInfo)};
-		startupInfo.dwFlags = STARTF_USESHOWWINDOW;
-		startupInfo.wShowWindow = SW_HIDE;
-
 		namespace fs = std::filesystem;
-		const fs::path cmdPath{fs::weakly_canonical(fs::path{sys_info::get_system_dir()} / fs::path{L"cmd.exe"})};
-		std::wstring cmdLine = params.empty() ? std::format(LR"(/c start "" "{}")", exePath) : std::format(LR"(/c start "" "{}" {})", exePath, params);
-		if (!DetourCreateProcessWithDllExW(cmdPath.c_str(), cmdLine.data(), nullptr, nullptr, 0,
+		const fs::path targetPath{exePath};
+		std::wstring cmdLine = params.empty() ? std::format(L"\"{}\"", targetPath.native()) : std::format(L"\"{}\" {}", targetPath.native(), params);
+		if (!DetourCreateProcessWithDllExW(targetPath.c_str(), cmdLine.data(), nullptr, nullptr, FALSE,
 		                                   CREATE_DEFAULT_ERROR_MODE | CREATE_SUSPENDED, nullptr,
 		                                   std::filesystem::path{exePath}.parent_path().native().c_str(), &startupInfo, &procInfo,
 		                                   env->ensureDllInDeviceAndReturnPath().c_str(), &::CreateProcessW))

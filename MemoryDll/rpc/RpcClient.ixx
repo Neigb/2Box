@@ -136,7 +136,7 @@ namespace rpc
 
 	export const ClientBindingHandle& get_default_binding_info()
 	{
-		static ClientBindingHandle defaultBindingInfo(ClientAlpcBindingString{"{63B40BDA-A2D1-4516-BDBB-E1E2A960D31E}2BoxServer"});
+		static ClientBindingHandle defaultBindingInfo(ClientAlpcBindingString{"{63B40BDA-A2D1-4516-BDBB-E1E2A960D31E}"});
 		return defaultBindingInfo;
 	}
 
@@ -163,7 +163,7 @@ namespace rpc
 			return static_cast<const DerivedT*>(this)->getHandle();
 		}
 
-		decltype(auto) login2Box(unsigned int pid, unsigned long long envFlag) const
+		decltype(auto) loginHost(unsigned int pid, unsigned long long envFlag) const
 		{
 			return login(handle(), pid, envFlag);
 		}

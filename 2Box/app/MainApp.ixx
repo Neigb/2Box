@@ -151,8 +151,8 @@ private:
 class MainApp
 {
 public:
-	static constexpr std::wstring_view appName{L"2Box"};
-	static constexpr std::string_view appNameA{"2Box"};
+	static constexpr std::wstring_view appName{L"Workspace"};
+	static constexpr std::string_view appNameA{"Workspace"};
 
 public:
 	HINSTANCE moduleInstance() const noexcept { return m_hInstance; }

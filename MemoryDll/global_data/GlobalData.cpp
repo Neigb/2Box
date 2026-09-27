@@ -12,6 +12,36 @@ import "sys_defs.hpp";
 
 namespace
 {
+	std::uint64_t hash_identity(std::uint64_t seed, std::string_view source)
+	{
+		std::uint64_t hash = 14695981039346656037ULL ^ seed;
+		for (const unsigned char c : source)
+		{
+			hash = (hash ^ c) * 1099511628211ULL;
+		}
+		return hash;
+	}
+
+	std::string normalize_disk_serial(std::string_view raw, bool ataWordOrder)
+	{
+		std::string value{raw};
+		if (ataWordOrder)
+		{
+			for (std::size_t i = 0; i + 1 < value.size(); i += 2)
+			{
+				std::swap(value[i], value[i + 1]);
+			}
+		}
+		const auto isPadding = [](char c) { return c == '\0' || c == ' ' || c == '\t'; };
+		while (!value.empty() && isPadding(value.front())) value.erase(value.begin());
+		while (!value.empty() && isPadding(value.back())) value.pop_back();
+		for (char& c : value)
+		{
+			if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+		}
+		return value;
+	}
+
 	// void InitConsole()
 	// {
 	// 	if (!AllocConsole())
@@ -71,6 +101,31 @@ namespace
 
 namespace global
 {
+	std::string Data::virtualDiskSerial(std::string_view serial, bool ataWordOrder) const
+	{
+		const std::string normalized = normalize_disk_serial(serial, ataWordOrder);
+		if (normalized.empty()) return {};
+		std::string result = std::format("{:016X}", hash_identity(m_envFlag ^ 0x4449534BULL, normalized));
+		result.resize(std::min(result.size(), normalized.size()));
+		return result;
+	}
+
+	void Data::virtualMac(std::uint8_t* address, std::size_t length) const
+	{
+		if (!address || length != 6) return;
+		const std::string_view source{reinterpret_cast<const char*>(address), length};
+		const std::uint64_t hash = hash_identity(m_envFlag ^ 0x4D4143ULL, source);
+		const std::array original{address[3], address[4], address[5]};
+		for (std::size_t i = 0; i < 3; ++i)
+		{
+			address[i + 3] = static_cast<std::uint8_t>(hash >> (i * 8));
+		}
+		if (original[0] == address[3] && original[1] == address[4] && original[2] == address[5])
+		{
+			address[5] ^= 1;
+		}
+	}
+
 	void Data::initialize(SystemVersionInfo versionInfo, std::uint64_t envFlag, unsigned long envIndex, std::wstring_view rootPath)
 	{
 		m_sysVersion = versionInfo;
@@ -82,7 +137,6 @@ namespace global
 
 		initializePrivilegesAbout();
 		initializeRegistry();
-		initializeSelfPath();
 		initializeDllFullPath();
 		initializeKnownFolderPath();
 		initializeMisc();
@@ -109,10 +163,16 @@ namespace global
 		std::wstring lowerPath(pathToCheck);
 		std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), std::towlower);
 
+		std::wstring envRoot = (std::filesystem::path{m_rootPath} / L"Env").lexically_normal().native();
+		std::transform(envRoot.begin(), envRoot.end(), envRoot.begin(), std::towlower);
+		if (!envRoot.ends_with(L'\\'))
+		{
+			envRoot += L'\\';
+		}
 		if (lowerPath.contains(L"microsoft")
 			|| lowerPath.contains(L"nvidia")
 			|| lowerPath.contains(L"amd")
-			|| lowerPath.contains(LR"(\2box\env\)"))
+			|| lowerPath.starts_with(envRoot))
 		{
 			return false;
 		}
@@ -191,17 +251,6 @@ namespace global
 		};
 	}
 
-	void Data::initializeSelfPath()
-	{
-		constexpr DWORD pathLength = std::numeric_limits<short>::max();
-		m_selfFullPath.resize(pathLength);
-		DWORD resultSize = GetModuleFileNameW(nullptr, m_selfFullPath.data(), pathLength);
-		m_selfFullPath.resize(resultSize);
-		m_selfFullPath = std::wstring(m_selfFullPath);
-		m_selfFileName = std::filesystem::path{m_selfFullPath}.filename().native();
-		m_bIsCmd = _wcsicmp(m_selfFileName.c_str(), L"cmd.exe") == 0;
-	}
-
 	void Data::initializeDllFullPath()
 	{
 		namespace fs = std::filesystem;
@@ -241,7 +290,7 @@ namespace global
 
 	void Data::initializeMisc()
 	{
-		m_inputSyncMsgId = RegisterWindowMessageW(L"2Box_WM_INPUT_SYNC");
+		m_inputSyncMsgId = RegisterWindowMessageW(L"{63B40BDA-A2D1-4516-BDBB-E1E2A960D31E}_INPUT_SYNC");
 		if (!m_inputSyncMsgId)
 		{
 			m_inputSyncMsgId = 9527;

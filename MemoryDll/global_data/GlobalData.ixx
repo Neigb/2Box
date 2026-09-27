@@ -59,13 +59,14 @@ namespace global
 		std::uint64_t envFlag() const { return m_envFlag; }
 		std::uint32_t envIndex() const { return m_envIndex; }
 		bool isNonLimitedAdmin() const { return m_bIsNonLimitedAdmin; }
-		bool isCmd() const { return m_bIsCmd; }
 		std::wstring_view envFlagName() const { return m_envFlagName; }
 		std::string_view envFlagNameA() const { return m_envFlagNameA; }
 		std::wstring_view rootPath() const { return m_rootPath; }
 		std::string_view dllFullPath() const { return m_dllFullPath; }
 		HKEY appKey() const { return m_appKey; }
 		std::uint32_t inputSyncMsgId() const { return m_inputSyncMsgId; }
+		std::string virtualDiskSerial(std::string_view serial, bool ataWordOrder = false) const;
+		void virtualMac(std::uint8_t* address, std::size_t length) const;
 
 		bool isInKnownFolderPath(std::wstring_view path) const;
 		std::optional<std::wstring> getRedirectPath(std::wstring_view knownFolderPath) const;
@@ -75,7 +76,6 @@ namespace global
 
 		void initializePrivilegesAbout();
 		void initializeRegistry();
-		void initializeSelfPath();
 		void initializeDllFullPath();
 		void initializeKnownFolderPath();
 		void initializeMisc();
@@ -85,13 +85,10 @@ namespace global
 		std::uint64_t m_envFlag{0};
 		std::uint32_t m_envIndex{0};
 		bool m_bIsNonLimitedAdmin{false};
-		bool m_bIsCmd{false};
 		std::wstring m_envFlagName;
 		std::string m_envFlagNameA;
 		std::string m_dllFullPath;
 		std::wstring m_rootPath;
-		std::wstring m_selfFullPath;
-		std::wstring m_selfFileName;
 		RegKey m_appKey;
 		std::vector<std::wstring> m_knownFolders;
 		std::uint32_t m_inputSyncMsgId{0};

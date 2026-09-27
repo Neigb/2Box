@@ -163,12 +163,12 @@ namespace hook
 		                lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags,
 		                lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation))
 		{
-			// 因为不知道该怎么优雅的拦截cmd创建管理员进程，因此在这里抹去这个ERROR_ELEVATION_REQUIRED错误
-			if (GetLastError() == ERROR_ELEVATION_REQUIRED && global::Data::get().isCmd())
+			const DWORD error = GetLastError();
+			if (error == ERROR_ELEVATION_REQUIRED)
 			{
-				SetLastError(ERROR_ACCESS_DENIED);
 				rpc::default_call_ignore_error(&rpc::ClientDefault::requireElevation, GetCurrentProcessId(), global::Data::get().envFlag(), lpApplicationName ? lpApplicationName : L"");
 			}
+			SetLastError(error);
 			return FALSE;
 		}
 		const BOOL bRet = inject_dll_to_process(lpProcessInformation);
@@ -317,6 +317,140 @@ namespace hook
 
 #pragma pack()
 
+	void rewrite_ata_serial(char* raw)
+	{
+		const std::string serial = global::Data::get().virtualDiskSerial(std::string_view{raw, 20}, true);
+		if (serial.empty()) return;
+		std::array<char, 20> ataSerial;
+		ataSerial.fill(' ');
+		std::memcpy(ataSerial.data(), serial.data(), std::min(serial.size(), ataSerial.size()));
+		for (std::size_t i = 0; i < ataSerial.size(); i += 2) std::swap(ataSerial[i], ataSerial[i + 1]);
+		std::memcpy(raw, ataSerial.data(), ataSerial.size());
+	}
+
+	void rewrite_storage_serial(void* output, DWORD returnedSize)
+	{
+		if (returnedSize < FIELD_OFFSET(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties)) return;
+		auto* descriptor = static_cast<PSTORAGE_DEVICE_DESCRIPTOR>(output);
+		if (!descriptor->SerialNumberOffset || descriptor->SerialNumberOffset >= returnedSize) return;
+		char* serial = static_cast<char*>(output) + descriptor->SerialNumberOffset;
+		const std::size_t capacity = returnedSize - descriptor->SerialNumberOffset;
+		char* end = static_cast<char*>(std::memchr(serial, '\0', capacity));
+		if (!end) return;
+		const std::string virtualSerial = global::Data::get().virtualDiskSerial(
+			std::string_view{serial, static_cast<std::size_t>(end - serial)});
+		if (virtualSerial.empty() || virtualSerial.size() > static_cast<std::size_t>(end - serial)) return;
+		std::memcpy(serial, virtualSerial.data(), virtualSerial.size());
+		std::fill(serial + virtualSerial.size(), end, '\0');
+	}
+
+	enum class DeviceQueryKind { None, SmartIdentify, ScsiIdentify, StorageDescriptor };
+
+	DeviceQueryKind classify_device_query(DWORD code, const void* input, DWORD inputSize, const void* output, DWORD outputSize)
+	{
+		if (!input || !output) return DeviceQueryKind::None;
+		if (code == SMART_RCV_DRIVE_DATA)
+		{
+			if (inputSize < sizeof(SENDCMDINPARAMS) - 1 || outputSize < sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
+				return DeviceQueryKind::None;
+			const auto* command = static_cast<const SENDCMDINPARAMS*>(input);
+			return command->irDriveRegs.bCommandReg == IDE_ATA_IDENTIFY || command->irDriveRegs.bCommandReg == IDE_ATAPI_IDENTIFY
+				? DeviceQueryKind::SmartIdentify : DeviceQueryKind::None;
+		}
+		if (code == IOCTL_SCSI_MINIPORT)
+		{
+			if (inputSize < sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDINPARAMS) - 1
+				|| outputSize < sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
+				return DeviceQueryKind::None;
+			const auto* header = static_cast<const SRB_IO_CONTROL*>(input);
+			const auto* command = reinterpret_cast<const SENDCMDINPARAMS*>(static_cast<const char*>(input) + sizeof(SRB_IO_CONTROL));
+			if (header->HeaderLength != sizeof(SRB_IO_CONTROL) || header->ControlCode != IOCTL_SCSI_MINIPORT_IDENTIFY
+				|| std::string_view{reinterpret_cast<const char*>(header->Signature), sizeof(header->Signature)} != "SCSIDISK"
+				|| (command->irDriveRegs.bCommandReg != IDE_ATA_IDENTIFY && command->irDriveRegs.bCommandReg != IDE_ATAPI_IDENTIFY))
+				return DeviceQueryKind::None;
+			return DeviceQueryKind::ScsiIdentify;
+		}
+		if (code == IOCTL_STORAGE_QUERY_PROPERTY)
+		{
+			if (inputSize < FIELD_OFFSET(STORAGE_PROPERTY_QUERY, AdditionalParameters)
+				|| outputSize < sizeof(STORAGE_DESCRIPTOR_HEADER)) return DeviceQueryKind::None;
+			const auto* query = static_cast<const STORAGE_PROPERTY_QUERY*>(input);
+			return query->QueryType == PropertyStandardQuery && query->PropertyId == StorageDeviceProperty
+				? DeviceQueryKind::StorageDescriptor : DeviceQueryKind::None;
+		}
+		return DeviceQueryKind::None;
+	}
+
+	void rewrite_device_query(DeviceQueryKind kind, void* output, DWORD capacity, DWORD transferred)
+	{
+		if (!output) return;
+		const DWORD bytes = std::min(capacity, transferred);
+		if (kind == DeviceQueryKind::SmartIdentify && bytes >= sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
+		{
+			auto* data = reinterpret_cast<MYOUT*>(static_cast<SENDCMDOUTPARAMS*>(output)->bBuffer);
+			rewrite_ata_serial(data->struMy.sSerialNumber);
+		}
+		else if (kind == DeviceQueryKind::ScsiIdentify && bytes >= sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
+		{
+			auto* params = reinterpret_cast<SENDCMDOUTPARAMS*>(static_cast<char*>(output) + sizeof(SRB_IO_CONTROL));
+			auto* data = reinterpret_cast<MYOUT*>(params->bBuffer);
+			rewrite_ata_serial(data->struMy.sSerialNumber);
+		}
+		else if (kind == DeviceQueryKind::StorageDescriptor)
+		{
+			rewrite_storage_serial(output, bytes);
+		}
+	}
+
+	struct PendingDeviceQuery
+	{
+		HANDLE device;
+		HANDLE event;
+		void* output;
+		DWORD capacity;
+		DeviceQueryKind kind;
+	};
+
+	std::mutex pendingDeviceMutex;
+	std::unordered_map<LPOVERLAPPED, PendingDeviceQuery> pendingDeviceQueries;
+
+	void finish_device_query(LPOVERLAPPED overlapped, bool succeeded, DWORD transferred)
+	{
+		PendingDeviceQuery query{};
+		{
+			std::lock_guard lock(pendingDeviceMutex);
+			const auto it = pendingDeviceQueries.find(overlapped);
+			if (it == pendingDeviceQueries.end()) return;
+			query = it->second;
+			pendingDeviceQueries.erase(it);
+		}
+		if (succeeded) rewrite_device_query(query.kind, query.output, query.capacity, transferred);
+	}
+
+	void finish_signaled_device_queries(HANDLE signaled)
+	{
+		std::vector<std::pair<PendingDeviceQuery, std::pair<bool, DWORD>>> completed;
+		{
+			std::lock_guard lock(pendingDeviceMutex);
+			for (auto it = pendingDeviceQueries.begin(); it != pendingDeviceQueries.end();)
+			{
+				const PendingDeviceQuery& query = it->second;
+				const LPOVERLAPPED overlapped = it->first;
+				if ((query.event == signaled || query.device == signaled) && overlapped->Internal != 0x103)
+				{
+					completed.emplace_back(query, std::pair{overlapped->Internal == 0,
+						static_cast<DWORD>(std::min<ULONG_PTR>(overlapped->InternalHigh, std::numeric_limits<DWORD>::max()))});
+					it = pendingDeviceQueries.erase(it);
+				}
+				else ++it;
+			}
+		}
+		for (const auto& [query, result] : completed)
+		{
+			if (result.first) rewrite_device_query(query.kind, query.output, query.capacity, result.second);
+		}
+	}
+
 
 	template <auto Trampoline>
 	std::optional<BOOL> Proc_SMART_RCV_DRIVE_DATA(HANDLE hDevice, DWORD dwIoControlCode,
@@ -350,9 +484,7 @@ namespace hook
 			return bRet;
 		}
 		MYOUT* pOut = reinterpret_cast<MYOUT*>(static_cast<SENDCMDOUTPARAMS*>(lpOutBuffer)->bBuffer);
-		const std::string_view serial = global::Data::get().envFlagNameA();
-		std::fill_n(pOut->struMy.sSerialNumber, sizeof(pOut->struMy.sSerialNumber), ' ');
-		std::memcpy(pOut->struMy.sSerialNumber, serial.data(), std::min(serial.size(), sizeof(pOut->struMy.sSerialNumber)));
+		rewrite_ata_serial(pOut->struMy.sSerialNumber);
 		return bRet;
 	}
 
@@ -394,9 +526,7 @@ namespace hook
 		}
 		SENDCMDOUTPARAMS* pOutParams = reinterpret_cast<SENDCMDOUTPARAMS*>(static_cast<char*>(lpOutBuffer) + sizeof(SRB_IO_CONTROL));
 		MYOUT* pOut = reinterpret_cast<MYOUT*>(pOutParams->bBuffer);
-		const std::string_view serial = global::Data::get().envFlagNameA();
-		std::fill_n(pOut->struMy.sSerialNumber, sizeof(pOut->struMy.sSerialNumber), ' ');
-		std::memcpy(pOut->struMy.sSerialNumber, serial.data(), std::min(serial.size(), sizeof(pOut->struMy.sSerialNumber)));
+		rewrite_ata_serial(pOut->struMy.sSerialNumber);
 		return bRet;
 	}
 
@@ -435,39 +565,8 @@ namespace hook
 		{
 			return bRet;
 		}
-		auto* header = static_cast<PSTORAGE_DESCRIPTOR_HEADER>(lpOutBuffer);
-		const std::string_view flagName = global::Data::get().envFlagNameA();
-		const DWORD serialSize = static_cast<DWORD>(flagName.size() + 1);
-		const DWORD originalSize = header->Size;
-		const DWORD rawPropertiesOffset = FIELD_OFFSET(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties);
-		if (originalSize < rawPropertiesOffset || originalSize > std::numeric_limits<DWORD>::max() - serialSize)
-		{
-			return bRet;
-		}
-		const DWORD virtualSize = originalSize + serialSize;
-		header->Size = virtualSize;
-
-		// A header-only query advertises the size needed for a complete virtual descriptor.
-		const DWORD returnedSize = lpBytesReturned ? *lpBytesReturned : nOutBufferSize;
-		if (returnedSize != originalSize)
-		{
-			return bRet;
-		}
-		if (nOutBufferSize < virtualSize)
-		{
-			SetLastError(ERROR_MORE_DATA);
-			return FALSE;
-		}
-		auto* descriptor = static_cast<PSTORAGE_DEVICE_DESCRIPTOR>(lpOutBuffer);
-		auto* serial = static_cast<char*>(lpOutBuffer) + originalSize;
-		std::memcpy(serial, flagName.data(), flagName.size());
-		serial[flagName.size()] = '\0';
-		descriptor->SerialNumberOffset = originalSize;
-		descriptor->RawPropertiesLength = virtualSize - rawPropertiesOffset;
-		if (lpBytesReturned)
-		{
-			*lpBytesReturned = virtualSize;
-		}
+		const DWORD returnedSize = lpBytesReturned ? std::min(*lpBytesReturned, nOutBufferSize) : nOutBufferSize;
+		rewrite_storage_serial(lpOutBuffer, returnedSize);
 		return bRet;
 	}
 
@@ -477,14 +576,35 @@ namespace hook
 	                            LPVOID lpOutBuffer, __in DWORD nOutBufferSize,
 	                            __out_opt LPDWORD lpBytesReturned, __inout_opt LPOVERLAPPED lpOverlapped)
 	{
-		// An overlapped request can complete after this hook returns. Preserve its native
-		// completion and error status until completed-output rewriting is implemented.
 		if (lpOverlapped)
 		{
-			return Trampoline(hDevice, dwIoControlCode,
+			const DeviceQueryKind kind = classify_device_query(dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize);
+			const BOOL result = Trampoline(hDevice, dwIoControlCode,
 			                  lpInBuffer, nInBufferSize,
 			                  lpOutBuffer, nOutBufferSize,
 			                  lpBytesReturned, lpOverlapped);
+			const DWORD error = GetLastError();
+			if (kind != DeviceQueryKind::None)
+			{
+				if (result)
+				{
+					const DWORD transferred = lpBytesReturned ? *lpBytesReturned :
+						static_cast<DWORD>(std::min<ULONG_PTR>(lpOverlapped->InternalHigh, std::numeric_limits<DWORD>::max()));
+					rewrite_device_query(kind, lpOutBuffer, nOutBufferSize, transferred);
+				}
+				else if (error == ERROR_IO_PENDING)
+				{
+					const HANDLE event = reinterpret_cast<HANDLE>(reinterpret_cast<ULONG_PTR>(lpOverlapped->hEvent) & ~ULONG_PTR{1});
+					try
+					{
+						std::lock_guard lock(pendingDeviceMutex);
+						pendingDeviceQueries.insert_or_assign(lpOverlapped, PendingDeviceQuery{hDevice, event, lpOutBuffer, nOutBufferSize, kind});
+					}
+					catch (...) {}
+				}
+			}
+			SetLastError(error);
+			return result;
 		}
 		std::optional<BOOL> result = std::nullopt;
 
@@ -514,6 +634,122 @@ namespace hook
 		                  lpBytesReturned, lpOverlapped);
 	}
 
+	template <auto Trampoline>
+	BOOL WINAPI GetOverlappedResult(HANDLE device, LPOVERLAPPED overlapped, LPDWORD transferred, BOOL wait)
+	{
+		const BOOL result = Trampoline(device, overlapped, transferred, wait);
+		const DWORD error = GetLastError();
+		if (overlapped && (result || error != ERROR_IO_INCOMPLETE))
+			finish_device_query(overlapped, result, result && transferred ? *transferred : 0);
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	BOOL WINAPI GetOverlappedResultEx(HANDLE device, LPOVERLAPPED overlapped, LPDWORD transferred, DWORD timeout, BOOL alertable)
+	{
+		const BOOL result = Trampoline(device, overlapped, transferred, timeout, alertable);
+		const DWORD error = GetLastError();
+		if (overlapped && (result || (error != WAIT_TIMEOUT && error != ERROR_IO_INCOMPLETE && error != WAIT_IO_COMPLETION)))
+			finish_device_query(overlapped, result, result && transferred ? *transferred : 0);
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	BOOL WINAPI GetQueuedCompletionStatus(HANDLE port, LPDWORD transferred, PULONG_PTR key, LPOVERLAPPED* overlapped, DWORD timeout)
+	{
+		const BOOL result = Trampoline(port, transferred, key, overlapped, timeout);
+		const DWORD error = GetLastError();
+		if (overlapped && *overlapped)
+			finish_device_query(*overlapped, result, result && transferred ? *transferred : 0);
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	BOOL WINAPI GetQueuedCompletionStatusEx(HANDLE port, LPOVERLAPPED_ENTRY entries, ULONG count, PULONG removed, DWORD timeout, BOOL alertable)
+	{
+		const BOOL result = Trampoline(port, entries, count, removed, timeout, alertable);
+		const DWORD error = GetLastError();
+		if (result && entries && removed)
+		{
+			for (ULONG i = 0; i < *removed && i < count; ++i)
+			{
+				const auto& entry = entries[i];
+				if (entry.lpOverlapped)
+					finish_device_query(entry.lpOverlapped, entry.Internal == 0, entry.dwNumberOfBytesTransferred);
+			}
+		}
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	DWORD WINAPI WaitForSingleObject(HANDLE handle, DWORD timeout)
+	{
+		const DWORD result = Trampoline(handle, timeout);
+		const DWORD error = GetLastError();
+		if (result == WAIT_OBJECT_0) finish_signaled_device_queries(handle);
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	DWORD WINAPI WaitForSingleObjectEx(HANDLE handle, DWORD timeout, BOOL alertable)
+	{
+		const DWORD result = Trampoline(handle, timeout, alertable);
+		const DWORD error = GetLastError();
+		if (result == WAIT_OBJECT_0) finish_signaled_device_queries(handle);
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	DWORD WINAPI WaitForMultipleObjects(DWORD count, const HANDLE* handles, BOOL waitAll, DWORD timeout)
+	{
+		const DWORD result = Trampoline(count, handles, waitAll, timeout);
+		const DWORD error = GetLastError();
+		if (handles && count && result >= WAIT_OBJECT_0 && result < WAIT_OBJECT_0 + count)
+		{
+			if (waitAll) for (DWORD i = 0; i < count; ++i) finish_signaled_device_queries(handles[i]);
+			else finish_signaled_device_queries(handles[result - WAIT_OBJECT_0]);
+		}
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	DWORD WINAPI WaitForMultipleObjectsEx(DWORD count, const HANDLE* handles, BOOL waitAll, DWORD timeout, BOOL alertable)
+	{
+		const DWORD result = Trampoline(count, handles, waitAll, timeout, alertable);
+		const DWORD error = GetLastError();
+		if (handles && count && result >= WAIT_OBJECT_0 && result < WAIT_OBJECT_0 + count)
+		{
+			if (waitAll) for (DWORD i = 0; i < count; ++i) finish_signaled_device_queries(handles[i]);
+			else finish_signaled_device_queries(handles[result - WAIT_OBJECT_0]);
+		}
+		SetLastError(error);
+		return result;
+	}
+
+	template <auto Trampoline>
+	BOOL WINAPI CloseHandle(HANDLE handle)
+	{
+		const BOOL result = Trampoline(handle);
+		const DWORD error = GetLastError();
+		if (result)
+		{
+			std::lock_guard lock(pendingDeviceMutex);
+			std::erase_if(pendingDeviceQueries, [handle](const auto& item)
+			{
+				return item.second.device == handle || item.second.event == handle;
+			});
+		}
+		SetLastError(error);
+		return result;
+	}
+
 	void hook_kernel32()
 	{
 		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();
@@ -526,6 +762,12 @@ namespace hook
 		return HookInfo{&name<trampolineConst.value>, kernel32MappedAddress}; \
 	})
 
+#define CREATE_HOOK_BY_POINTER(name) \
+	create_hook_by_func_ptr<&::name>().setHookFromGetter([&](auto trampolineConst) \
+	{ \
+		return HookInfo{&name<trampolineConst.value>}; \
+	})
+
 		CREATE_HOOK_BY_NAME(WaitNamedPipeA);
 		CREATE_HOOK_BY_NAME(WaitNamedPipeW);
 		CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorA);
@@ -535,5 +777,17 @@ namespace hook
 		CREATE_HOOK_BY_NAME(WinExec);
 		CREATE_HOOK_BY_NAME(OpenProcess);
 		CREATE_HOOK_BY_NAME(DeviceIoControl);
+		CREATE_HOOK_BY_POINTER(GetOverlappedResult);
+		CREATE_HOOK_BY_POINTER(GetOverlappedResultEx);
+		CREATE_HOOK_BY_POINTER(GetQueuedCompletionStatus);
+		CREATE_HOOK_BY_POINTER(GetQueuedCompletionStatusEx);
+		CREATE_HOOK_BY_POINTER(WaitForSingleObject);
+		CREATE_HOOK_BY_POINTER(WaitForSingleObjectEx);
+		CREATE_HOOK_BY_POINTER(WaitForMultipleObjects);
+		CREATE_HOOK_BY_POINTER(WaitForMultipleObjectsEx);
+		CREATE_HOOK_BY_POINTER(CloseHandle);
+
+#undef CREATE_HOOK_BY_POINTER
+#undef CREATE_HOOK_BY_NAME
 	}
 }

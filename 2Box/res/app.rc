@@ -61,7 +61,7 @@ END
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_APP_ICON            ICON                    "2Box.ico"
+IDI_APP_ICON            ICON                    "app.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -87,12 +87,12 @@ BEGIN
         BLOCK "080404b0"
         BEGIN
             VALUE "CompanyName", "Wei"
-            VALUE "FileDescription", "2Box"
+            VALUE "FileDescription", "Workspace Host"
             VALUE "FileVersion", "2.1.2"
-            VALUE "InternalName", "2Box.exe"
+            VALUE "InternalName", "WorkspaceHost.exe"
             VALUE "LegalCopyright", "Copyright (C) 2025 Wei.All Rights Reserved."
-            VALUE "OriginalFilename", "2Box.exe"
-            VALUE "ProductName", "2Box"
+            VALUE "OriginalFilename", "WorkspaceHost.exe"
+            VALUE "ProductName", "Workspace"
             VALUE "ProductVersion", "2.1.2"
         END
     END

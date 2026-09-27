@@ -165,7 +165,7 @@ namespace
 
 	const ClientBindingHandle& get_default_binding_info()
 	{
-		static ClientBindingHandle defaultBindingInfo(ClientAlpcBindingString{"{63B40BDA-A2D1-4516-BDBB-E1E2A960D31E}2BoxServer"});
+		static ClientBindingHandle defaultBindingInfo(ClientAlpcBindingString{"{63B40BDA-A2D1-4516-BDBB-E1E2A960D31E}"});
 		return defaultBindingInfo;
 	}
 
@@ -271,7 +271,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 		startupInfo.dwFlags = STARTF_USESHOWWINDOW;
 		startupInfo.wShowWindow = SW_HIDE;
 
-		if (!CreateProcessW(fs::weakly_canonical(fs::path{selfDir} / fs::path{L"2Box.exe"}).native().c_str(),
+		if (!CreateProcessW(fs::weakly_canonical(fs::path{selfDir} / fs::path{L"WorkspaceHost.exe"}).native().c_str(),
 		                    nullptr, nullptr, nullptr,
 		                    FALSE, CREATE_DEFAULT_ERROR_MODE, nullptr,
 		                    selfDir.c_str(), &startupInfo, &procInfo))

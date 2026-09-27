@@ -16,20 +16,7 @@ namespace hook
 			PIP_ADAPTER_INFO pCurrAddresses = AdapterInfo;
 			while (pCurrAddresses)
 			{
-				if (pCurrAddresses->AddressLength != 0)
-				{
-					BYTE address[MAX_ADAPTER_ADDRESS_LENGTH]{};
-					const std::uint64_t flag = global::Data::get().envFlag();
-					static_assert(sizeof(address) == sizeof(flag));
-					static_assert(sizeof(pCurrAddresses->Address) == sizeof(flag));
-					const UINT length = std::min(pCurrAddresses->AddressLength, static_cast<UINT>(sizeof(address)));
-					memcpy(address, &flag, length);
-
-					for (UINT i = 0; i < length; ++i)
-					{
-						pCurrAddresses->Address[i] += address[i];
-					}
-				}
+				global::Data::get().virtualMac(pCurrAddresses->Address, pCurrAddresses->AddressLength);
 
 				pCurrAddresses = pCurrAddresses->Next;
 			}
@@ -47,20 +34,7 @@ namespace hook
 			PIP_ADAPTER_ADDRESSES pCurrAddresses = AdapterAddresses;
 			while (pCurrAddresses)
 			{
-				if (pCurrAddresses->PhysicalAddressLength != 0)
-				{
-					BYTE physicalAddress[MAX_ADAPTER_ADDRESS_LENGTH]{};
-					const std::uint64_t flag = global::Data::get().envFlag();
-					static_assert(sizeof(physicalAddress) == sizeof(flag));
-					static_assert(sizeof(pCurrAddresses->PhysicalAddress) == sizeof(flag));
-					const ULONG length = std::min(pCurrAddresses->PhysicalAddressLength, static_cast<ULONG>(sizeof(physicalAddress)));
-					memcpy(physicalAddress, &flag, length);
-
-					for (UINT i = 0; i < length; ++i)
-					{
-						pCurrAddresses->PhysicalAddress[i] += physicalAddress[i];
-					}
-				}
+				global::Data::get().virtualMac(pCurrAddresses->PhysicalAddress, pCurrAddresses->PhysicalAddressLength);
 
 				pCurrAddresses = pCurrAddresses->Next;
 			}

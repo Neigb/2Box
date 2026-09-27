@@ -35,17 +35,8 @@ namespace hook
 				}
 				if (uRetCode == NRC_GOODRET)
 				{
-					UCHAR adapterAddress[6]{};
-					const std::uint64_t flag = global::Data::get().envFlag();
-					static_assert(sizeof(adapterAddress) <= sizeof(flag));
-					memcpy(adapterAddress, &flag, sizeof(adapterAddress));
-
 					ADAPTER_STATUS* pAdapter = reinterpret_cast<ADAPTER_STATUS*>(pNcb->ncb_buffer);
-					static_assert(sizeof(adapterAddress) == sizeof(pAdapter->adapter_address));
-					for (UINT i = 0; i < 6; ++i)
-					{
-						pAdapter->adapter_address[i] += adapterAddress[i];
-					}
+					global::Data::get().virtualMac(pAdapter->adapter_address, sizeof(pAdapter->adapter_address));
 
 					if (bIsAsync)
 					{

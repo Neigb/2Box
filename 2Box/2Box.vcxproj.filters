@@ -60,12 +60,12 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\2Box.ico">
+    <Image Include="res\app.ico">
       <Filter>res</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="res\2Box.rc">
+    <ResourceCompile Include="res\app.rc">
       <Filter>res</Filter>
     </ResourceCompile>
   </ItemGroup>
