@@ -99,7 +99,17 @@ jobs:
           }
           if (!(Test-Path -LiteralPath $scopeResult)) { throw 'Hook scope smoke did not finish' }
           $smoke = Get-Content -LiteralPath $scopeResult -Raw | ConvertFrom-Json
-          if (!$smoke.CompilerChildSucceeded) { throw "Hook scope compiler child failed: $($smoke.FatalError)" }
+          if (!$smoke.CompilerChildSucceeded) {
+            $trace = if (Test-Path -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE) {
+              (Get-Content -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE | Select-Object -Last 20) -join ' / '
+            } else { 'no injection trace' }
+            $detail = [string]$smoke.FatalError
+            if ($detail.Length -gt 500) { $detail = $detail.Substring(0, 500) }
+            $diagnostic = "$trace / $detail" -replace '%','%25' -replace '\r','%0D' -replace '\n','%0A'
+            Write-Output "::error title=Hook scope compiler child::$diagnostic"
+            Write-Host $smoke.FatalError
+            throw 'Hook scope compiler child failed'
+          }
 
       - name: Upload device probe results
         if: always() && matrix.configuration == 'Release' && matrix.platform == 'x64'

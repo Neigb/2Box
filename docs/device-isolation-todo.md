@@ -10,7 +10,7 @@
 - [x] 数据目录只发现一份旧注册表 hive 且新文件不存在时自动迁移，保留现有环境配置；多份 hive 时不自动猜测。
 - [x] 主启动器直接创建目标进程，省去命令解释器中转；将 RPC 和批量 Hook 初始化移至目标进程入口，先在 DLL 加载阶段校验并复制注入参数。
 - [x] 批量 Hook 安装逐项检查 Detours 返回值，失败时中止事务，避免部分 Hook 静默缺失。
-- [x] 增加可选 `WORKSPACE_HOOK_SCOPE=device`：保留设备查询和子进程注入相关 Hook，不安装 Ntdll 文件/注册表及 User32 窗口 Hook；未设置时保持完整范围。
+- [x] 增加可选 `WORKSPACE_HOOK_SCOPE=device`：保留设备查询、WMI/网卡及 Kernel32 子进程创建 Hook，不安装 Ntdll 文件/注册表、User32 窗口、命名管道和额外启动入口 Hook；未设置时保持完整范围。
 - [x] GitHub Actions 已配置 Debug/Release、x86/x64 构建；Release x64 增加原生与双环境运行探针，覆盖 WMI 同步/异步硬盘、BIOS/UUID/网卡、IP Helper、同步/重叠存储查询、短缓冲区和错误状态。
 
 ## 验证门槛

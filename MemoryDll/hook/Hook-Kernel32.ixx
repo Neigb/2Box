@@ -756,7 +756,7 @@ namespace hook
 		return result;
 	}
 
-	void hook_kernel32()
+	void hook_kernel32(bool deviceScope = false)
 	{
 		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();
 		sys_info::SysDllMapHelper kernel32Mapped = sys_info::get_kernel32_mapped();
@@ -774,14 +774,17 @@ namespace hook
 		return HookInfo{&name<trampolineConst.value>}; \
 	})
 
-		CREATE_HOOK_BY_NAME(WaitNamedPipeA);
-		CREATE_HOOK_BY_NAME(WaitNamedPipeW);
-		CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorA);
-		CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorW);
+		if (!deviceScope)
+		{
+			CREATE_HOOK_BY_NAME(WaitNamedPipeA);
+			CREATE_HOOK_BY_NAME(WaitNamedPipeW);
+			CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorA);
+			CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorW);
+		}
 		CREATE_HOOK_BY_NAME(CreateProcessA);
 		pCreateProcessTrampolineW = std::addressof(CREATE_HOOK_BY_NAME(CreateProcessW).funcAddress);
 		CREATE_HOOK_BY_NAME(WinExec);
-		CREATE_HOOK_BY_NAME(OpenProcess);
+		if (!deviceScope) CREATE_HOOK_BY_NAME(OpenProcess);
 		CREATE_HOOK_BY_NAME(DeviceIoControl);
 		CREATE_HOOK_BY_POINTER(GetOverlappedResult);
 		CREATE_HOOK_BY_POINTER(GetOverlappedResultEx);
