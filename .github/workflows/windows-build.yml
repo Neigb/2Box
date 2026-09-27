@@ -56,11 +56,13 @@ jobs:
         run: |
           $probe = Join-Path $env:GITHUB_WORKSPACE 'tests\windows-device-probe.ps1'
           $check = Join-Path $env:GITHUB_WORKSPACE 'tests\check-windows-device-probe.ps1'
+          $scopeSmoke = Join-Path $env:GITHUB_WORKSPACE 'tests\windows-hook-scope-smoke.ps1'
           $cli = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\WorkspaceCli.exe'
           $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
           $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
           $managedA = Join-Path $env:RUNNER_TEMP 'device-probe-managed-a.json'
           $managedB = Join-Path $env:RUNNER_TEMP 'device-probe-managed-b.json'
+          $scopeResult = Join-Path $env:RUNNER_TEMP 'device-probe-hook-scope.json'
           $nativeAssembly = Join-Path $env:RUNNER_TEMP 'device-probe-native.dll'
           $env:WORKSPACE_DIAGNOSTIC_FILE = Join-Path $env:RUNNER_TEMP 'device-probe-injection.log'
           & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline -NativeAssembly $nativeAssembly
@@ -89,6 +91,15 @@ jobs:
             }
           }
           & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
+          & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $scopeSmoke -Output $scopeResult
+          if ($LASTEXITCODE -ne 0) { throw "Hook scope smoke launch failed: $LASTEXITCODE" }
+          $deadline = (Get-Date).AddSeconds(45)
+          while (!(Test-Path -LiteralPath $scopeResult) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (!(Test-Path -LiteralPath $scopeResult)) { throw 'Hook scope smoke did not finish' }
+          $smoke = Get-Content -LiteralPath $scopeResult -Raw | ConvertFrom-Json
+          if (!$smoke.CompilerChildSucceeded) { throw "Hook scope compiler child failed: $($smoke.FatalError)" }
 
       - name: Upload device probe results
         if: always() && matrix.configuration == 'Release' && matrix.platform == 'x64'
