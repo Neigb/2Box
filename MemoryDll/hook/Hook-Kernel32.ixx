@@ -337,11 +337,6 @@ namespace hook
 		{
 			return std::nullopt;
 		}
-		if (lpOverlapped)
-		{
-			SetLastError(ERROR_ACCESS_DENIED);
-			return FALSE;
-		}
 		BOOL bRet = Trampoline(hDevice, dwIoControlCode,
 		                       lpInBuffer, nInBufferSize,
 		                       lpOutBuffer, nOutBufferSize,
@@ -350,14 +345,14 @@ namespace hook
 		{
 			return bRet;
 		}
-		MYOUT* pOut = reinterpret_cast<MYOUT*>(static_cast<SENDCMDOUTPARAMS*>(lpOutBuffer)->bBuffer);
-		std::format_to(pOut->struMy.sSerialNumber, "{}", global::Data::get().envFlagNameA());
-		pOut->struMy.sSerialNumber[sizeof(pOut->struMy.sSerialNumber) - 1] = '\0';
-		if (nOutBufferSize >= sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUT))
+		if (lpBytesReturned && *lpBytesReturned < sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
 		{
-			std::format_to(pOut->sModelNumber, "{}", global::Data::get().envFlagNameA());
-			pOut->sModelNumber[sizeof(pOut->sModelNumber) - 1] = '\0';
+			return bRet;
 		}
+		MYOUT* pOut = reinterpret_cast<MYOUT*>(static_cast<SENDCMDOUTPARAMS*>(lpOutBuffer)->bBuffer);
+		const std::string_view serial = global::Data::get().envFlagNameA();
+		std::fill_n(pOut->struMy.sSerialNumber, sizeof(pOut->struMy.sSerialNumber), ' ');
+		std::memcpy(pOut->struMy.sSerialNumber, serial.data(), std::min(serial.size(), sizeof(pOut->struMy.sSerialNumber)));
 		return bRet;
 	}
 
@@ -374,21 +369,16 @@ namespace hook
 		SRB_IO_CONTROL* p = static_cast<SRB_IO_CONTROL*>(lpInBuffer);
 		SENDCMDINPARAMS* pin = reinterpret_cast<SENDCMDINPARAMS*>(static_cast<char*>(lpInBuffer) + sizeof(SRB_IO_CONTROL));
 		if (sizeof(SRB_IO_CONTROL) != p->HeaderLength
-			&& IOCTL_SCSI_MINIPORT_IDENTIFY != p->ControlCode
-			&& std::string_view{reinterpret_cast<char*>(p->Signature), sizeof(p->Signature)} != std::string_view{"SCSIDISK"}
-			&& IDE_ATA_IDENTIFY != pin->irDriveRegs.bCommandReg
-			&& IDE_ATAPI_IDENTIFY != pin->irDriveRegs.bCommandReg)
+			|| IOCTL_SCSI_MINIPORT_IDENTIFY != p->ControlCode
+			|| std::string_view{reinterpret_cast<char*>(p->Signature), sizeof(p->Signature)} != std::string_view{"SCSIDISK"}
+			|| (IDE_ATA_IDENTIFY != pin->irDriveRegs.bCommandReg
+				&& IDE_ATAPI_IDENTIFY != pin->irDriveRegs.bCommandReg))
 		{
 			return std::nullopt;
 		}
 		if (nOutBufferSize < sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
 		{
 			return std::nullopt;
-		}
-		if (lpOverlapped)
-		{
-			SetLastError(ERROR_ACCESS_DENIED);
-			return FALSE;
 		}
 		BOOL bRet = Trampoline(hDevice, dwIoControlCode,
 		                       lpInBuffer, nInBufferSize,
@@ -398,15 +388,15 @@ namespace hook
 		{
 			return bRet;
 		}
+		if (lpBytesReturned && *lpBytesReturned < sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
+		{
+			return bRet;
+		}
 		SENDCMDOUTPARAMS* pOutParams = reinterpret_cast<SENDCMDOUTPARAMS*>(static_cast<char*>(lpOutBuffer) + sizeof(SRB_IO_CONTROL));
 		MYOUT* pOut = reinterpret_cast<MYOUT*>(pOutParams->bBuffer);
-		std::format_to(pOut->struMy.sSerialNumber, "{}", global::Data::get().envFlagNameA());
-		pOut->struMy.sSerialNumber[sizeof(pOut->struMy.sSerialNumber) - 1] = '\0';
-		if (nOutBufferSize >= sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUT))
-		{
-			std::format_to(pOut->sModelNumber, "{}", global::Data::get().envFlagNameA());
-			pOut->sModelNumber[sizeof(pOut->sModelNumber) - 1] = '\0';
-		}
+		const std::string_view serial = global::Data::get().envFlagNameA();
+		std::fill_n(pOut->struMy.sSerialNumber, sizeof(pOut->struMy.sSerialNumber), ' ');
+		std::memcpy(pOut->struMy.sSerialNumber, serial.data(), std::min(serial.size(), sizeof(pOut->struMy.sSerialNumber)));
 		return bRet;
 	}
 
@@ -421,7 +411,7 @@ namespace hook
 			return std::nullopt;
 		}
 		STORAGE_PROPERTY_QUERY* query = static_cast<STORAGE_PROPERTY_QUERY*>(lpInBuffer);
-		if (query->QueryType == PropertyExistsQuery)
+		if (query->QueryType != PropertyStandardQuery)
 		{
 			return std::nullopt;
 		}
@@ -433,11 +423,6 @@ namespace hook
 		{
 			return std::nullopt;
 		}
-		if (lpOverlapped)
-		{
-			SetLastError(ERROR_ACCESS_DENIED);
-			return FALSE;
-		}
 		BOOL bRet = Trampoline(hDevice, dwIoControlCode,
 		                       lpInBuffer, nInBufferSize,
 		                       lpOutBuffer, nOutBufferSize,
@@ -446,29 +431,43 @@ namespace hook
 		{
 			return bRet;
 		}
-		PSTORAGE_DEVICE_DESCRIPTOR sdn = static_cast<PSTORAGE_DEVICE_DESCRIPTOR>(lpOutBuffer);
-		const std::string_view flagName = global::Data::get().envFlagNameA();
-		constexpr DWORD iMinLen = sizeof(STORAGE_DEVICE_DESCRIPTOR);
-		sdn->Size = std::min(sdn->Size, static_cast<DWORD>(flagName.length() + iMinLen));
-
-		if (nOutBufferSize <= iMinLen)
+		if (lpBytesReturned && *lpBytesReturned < sizeof(STORAGE_DESCRIPTOR_HEADER))
 		{
 			return bRet;
 		}
-		DWORD bytesReturned = std::min(sdn->Size, nOutBufferSize);
+		auto* header = static_cast<PSTORAGE_DESCRIPTOR_HEADER>(lpOutBuffer);
+		const std::string_view flagName = global::Data::get().envFlagNameA();
+		const DWORD serialSize = static_cast<DWORD>(flagName.size() + 1);
+		const DWORD originalSize = header->Size;
+		constexpr DWORD rawPropertiesOffset = FIELD_OFFSET(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties);
+		if (originalSize < rawPropertiesOffset || originalSize > std::numeric_limits<DWORD>::max() - serialSize)
+		{
+			return bRet;
+		}
+		const DWORD virtualSize = originalSize + serialSize;
+		header->Size = virtualSize;
+
+		// A header-only query advertises the size needed for a complete virtual descriptor.
+		const DWORD returnedSize = lpBytesReturned ? *lpBytesReturned : nOutBufferSize;
+		if (returnedSize != originalSize)
+		{
+			return bRet;
+		}
+		if (nOutBufferSize < virtualSize)
+		{
+			SetLastError(ERROR_MORE_DATA);
+			return FALSE;
+		}
+		auto* descriptor = static_cast<PSTORAGE_DEVICE_DESCRIPTOR>(lpOutBuffer);
+		auto* serial = static_cast<char*>(lpOutBuffer) + originalSize;
+		std::memcpy(serial, flagName.data(), flagName.size());
+		serial[flagName.size()] = '\0';
+		descriptor->SerialNumberOffset = originalSize;
+		descriptor->RawPropertiesLength = virtualSize - rawPropertiesOffset;
 		if (lpBytesReturned)
 		{
-			*lpBytesReturned = bytesReturned;
+			*lpBytesReturned = virtualSize;
 		}
-		sdn->RawPropertiesLength = bytesReturned - iMinLen;
-		sdn->VendorIdOffset = 0;
-		sdn->ProductIdOffset = 0;
-		sdn->ProductRevisionOffset = 0;
-		sdn->SerialNumberOffset = iMinLen;
-
-		BYTE* pData = reinterpret_cast<BYTE*>(sdn) + iMinLen;
-		memcpy(pData, flagName.data(), sdn->RawPropertiesLength);
-		pData[sdn->RawPropertiesLength - 1] = 0;
 		return bRet;
 	}
 
@@ -478,6 +477,15 @@ namespace hook
 	                            LPVOID lpOutBuffer, __in DWORD nOutBufferSize,
 	                            __out_opt LPDWORD lpBytesReturned, __inout_opt LPOVERLAPPED lpOverlapped)
 	{
+		// An overlapped request can complete after this hook returns. Preserve its native
+		// completion and error status until completed-output rewriting is implemented.
+		if (lpOverlapped)
+		{
+			return Trampoline(hDevice, dwIoControlCode,
+			                  lpInBuffer, nInBufferSize,
+			                  lpOutBuffer, nOutBufferSize,
+			                  lpBytesReturned, lpOverlapped);
+		}
 		std::optional<BOOL> result = std::nullopt;
 
 		if (lpInBuffer && lpOutBuffer)

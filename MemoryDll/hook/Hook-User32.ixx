@@ -491,7 +491,7 @@ namespace hook
 			return hWnd;
 		}
 
-		if (uCmd != GW_HWNDNEXT || uCmd != GW_HWNDPREV)
+		if (uCmd != GW_HWNDNEXT && uCmd != GW_HWNDPREV)
 		{
 			return nullptr;
 		}
@@ -500,7 +500,7 @@ namespace hook
 		int tryCount = 1000;
 		while (hResult && tryCount > 0 && contains_toplevel_window_in_other_env(hResult))
 		{
-			hResult = Trampoline(hWnd, uCmd);
+			hResult = Trampoline(hResult, uCmd);
 			tryCount--;
 		}
 		return hResult;

@@ -645,37 +645,68 @@ namespace hook
 		if (SystemInformationClass == SystemProcessInformation)
 		{
 			const std::unordered_set<std::uint64_t> allProcInOtherEnv = GetAllProcessInOtherEnv();
-			PSYSTEM_PROCESS_INFORMATION pIndex = static_cast<PSYSTEM_PROCESS_INFORMATION>(SystemInformation);
-			PSYSTEM_PROCESS_INFORMATION pShow = pIndex;
-
-			do
+			if (allProcInOtherEnv.empty())
 			{
-				if (pIndex->UniqueProcessId && allProcInOtherEnv.contains(reinterpret_cast<ULONG_PTR>(pIndex->UniqueProcessId)))
-				{
-					if (pIndex->NextEntryOffset)
-					{
-						pShow->NextEntryOffset += pIndex->NextEntryOffset;
-					}
-					else
-					{
-						pShow->NextEntryOffset = 0;
-					}
-				}
-				else
-				{
-					pShow = pIndex;
-				}
-
-				if (pIndex->NextEntryOffset)
-				{
-					pIndex = reinterpret_cast<PSYSTEM_PROCESS_INFORMATION>(reinterpret_cast<char*>(pIndex) + pIndex->NextEntryOffset);
-				}
-				else
-				{
-					pIndex = nullptr;
-				}
+				return ret;
 			}
-			while (pIndex);
+
+			auto* buffer = static_cast<std::byte*>(SystemInformation);
+			const std::size_t bufferSize = ReturnLength && *ReturnLength <= SystemInformationLength
+				? *ReturnLength : SystemInformationLength;
+			std::vector<std::size_t> visibleOffsets;
+			std::size_t offset = 0;
+			bool foundLastEntry = false;
+			while (offset < bufferSize)
+			{
+				if (bufferSize - offset < sizeof(SYSTEM_PROCESS_INFORMATION))
+				{
+					return ret;
+				}
+				auto* entry = reinterpret_cast<PSYSTEM_PROCESS_INFORMATION>(buffer + offset);
+				const ULONG nextOffset = entry->NextEntryOffset;
+				if (nextOffset && (nextOffset < sizeof(SYSTEM_PROCESS_INFORMATION) || nextOffset > bufferSize - offset))
+				{
+					return ret;
+				}
+				if (!entry->UniqueProcessId || !allProcInOtherEnv.contains(reinterpret_cast<ULONG_PTR>(entry->UniqueProcessId)))
+				{
+					visibleOffsets.push_back(offset);
+				}
+				if (!nextOffset)
+				{
+					foundLastEntry = true;
+					break;
+				}
+				offset += nextOffset;
+			}
+			if (!foundLastEntry || visibleOffsets.empty())
+			{
+				return ret;
+			}
+
+			// The first record has no predecessor whose offset can skip it.
+			if (visibleOffsets.front() != 0)
+			{
+				const std::size_t sourceOffset = visibleOffsets.front();
+				auto* source = reinterpret_cast<PSYSTEM_PROCESS_INFORMATION>(buffer + sourceOffset);
+				const std::size_t recordSize = source->NextEntryOffset ? source->NextEntryOffset : bufferSize - sourceOffset;
+				const auto imageAddress = reinterpret_cast<std::uintptr_t>(source->ImageName.Buffer);
+				const auto sourceAddress = reinterpret_cast<std::uintptr_t>(source);
+				std::memmove(buffer, source, recordSize);
+				auto* first = reinterpret_cast<PSYSTEM_PROCESS_INFORMATION>(buffer);
+				if (imageAddress >= sourceAddress && imageAddress - sourceAddress < recordSize)
+				{
+					first->ImageName.Buffer = reinterpret_cast<PWSTR>(buffer + imageAddress - sourceAddress);
+				}
+				visibleOffsets.front() = 0;
+			}
+
+			for (std::size_t i = 0; i < visibleOffsets.size(); ++i)
+			{
+				auto* entry = reinterpret_cast<PSYSTEM_PROCESS_INFORMATION>(buffer + visibleOffsets[i]);
+				entry->NextEntryOffset = i + 1 < visibleOffsets.size()
+					? static_cast<ULONG>(visibleOffsets[i + 1] - visibleOffsets[i]) : 0;
+			}
 		}
 		return ret;
 	}
