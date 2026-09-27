@@ -756,6 +756,24 @@ namespace hook
 		return result;
 	}
 
+	void hook_kernel32_process_only()
+	{
+		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();
+		sys_info::SysDllMapHelper kernel32Mapped = sys_info::get_kernel32_mapped();
+		void* kernel32MappedAddress = kernel32Mapped.memAddress();
+		create_hook_by_func_type<KERNEL32_LIB_NAME, utils::make_literal_name<"CreateProcessA">(),
+			decltype(CreateProcessA<nullptr>)>().setHookFromGetter([&](auto trampolineConst)
+		{
+			return HookInfo{&CreateProcessA<trampolineConst.value>, kernel32MappedAddress};
+		});
+		pCreateProcessTrampolineW = std::addressof(create_hook_by_func_type<KERNEL32_LIB_NAME,
+			utils::make_literal_name<"CreateProcessW">(), decltype(CreateProcessW<nullptr>)>()
+			.setHookFromGetter([&](auto trampolineConst)
+			{
+				return HookInfo{&CreateProcessW<trampolineConst.value>, kernel32MappedAddress};
+			}).funcAddress);
+	}
+
 	void hook_kernel32(bool deviceScope = false)
 	{
 		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();

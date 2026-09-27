@@ -19,6 +19,13 @@ namespace hook
 		wchar_t scope[16]{};
 		const DWORD scopeLength = GetEnvironmentVariableW(L"WORKSPACE_HOOK_SCOPE", scope, static_cast<DWORD>(std::size(scope)));
 		const bool deviceScope = scopeLength == 6 && std::wstring_view{scope, scopeLength} == L"device";
+		const bool processOnlyScope = scopeLength == 7 && std::wstring_view{scope, scopeLength} == L"process";
+		if (processOnlyScope)
+		{
+			hook_kernel32_process_only();
+			HookManager::instance().installAll();
+			return;
+		}
 		if (!deviceScope) hook_ntdll();
 		hook_kernel32(deviceScope);
 		if (!deviceScope)
