@@ -28,6 +28,9 @@ Check ($base.InvalidWmiClassStatus -eq $first.InvalidWmiClassStatus) 'WMI failur
 Check ($base.ShortQuery -eq $first.ShortQuery) 'Short-buffer descriptor response changed'
 Check ($base.WmiModel -eq $first.WmiModel) 'Non-unique disk model changed'
 Check ((Is-Serial $base.WmiSerial) -or (Is-Serial $base.StorageSerial) -or $base.WmiMac) 'No device identifier available on runner'
+Check ((Is-Serial $base.StorageSerial) -or $base.StorageSerial -eq 'NO_SERIAL') 'Storage descriptor query did not complete'
+Check ((Is-Serial $base.AsyncStorageSerial) -or $base.AsyncStorageSerial -eq 'NO_SERIAL') 'Overlapped storage descriptor query did not complete'
+Check ($base.ShortQuery -match '^SHORT_OK:') 'Short-buffer storage descriptor header query did not complete'
 
 if (Is-Serial $base.WmiSerial) {
     Check ((Normalize-Serial $base.WmiSerial) -ne (Normalize-Serial $first.WmiSerial)) 'WMI disk serial was not rewritten'
@@ -74,4 +77,4 @@ if ($base.WmiAdapterGuid) {
     }
 }
 
-Write-Host 'Managed device query checks passed.'
+Write-Host "Managed device query checks passed. Storage serial rewrite exercised: $(Is-Serial $base.StorageSerial)."

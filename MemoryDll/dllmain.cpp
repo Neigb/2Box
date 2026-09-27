@@ -30,6 +30,30 @@ namespace
 			params->rootPath, params->rootPathCount);
 		probe_trace("initialized");
 		std::free(params);
+		if (const LONG error = DetourTransactionBegin(); error != NO_ERROR)
+		{
+			probe_trace("entry detach transaction begin failed", error);
+			TerminateProcess(GetCurrentProcess(), 1);
+		}
+		if (const LONG error = DetourUpdateThread(GetCurrentThread()); error != NO_ERROR)
+		{
+			DetourTransactionAbort();
+			probe_trace("entry detach update thread failed", error);
+			TerminateProcess(GetCurrentProcess(), 1);
+		}
+		if (const LONG error = DetourDetach(reinterpret_cast<void**>(&originalProcessEntry),
+			reinterpret_cast<void*>(&managed_process_entry)); error != NO_ERROR)
+		{
+			DetourTransactionAbort();
+			probe_trace("entry detach failed", error);
+			TerminateProcess(GetCurrentProcess(), 1);
+		}
+		if (const LONG error = DetourTransactionCommit(); error != NO_ERROR)
+		{
+			probe_trace("entry detach commit failed", error);
+			TerminateProcess(GetCurrentProcess(), 1);
+		}
+		probe_trace("entry detour detached");
 		return originalProcessEntry();
 	}
 }
