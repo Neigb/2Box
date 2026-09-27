@@ -65,23 +65,34 @@ jobs:
           $scopeResult = Join-Path $env:RUNNER_TEMP 'device-probe-hook-scope.json'
           $nativeAssembly = Join-Path $env:RUNNER_TEMP 'device-probe-native.dll'
           $env:WORKSPACE_DIAGNOSTIC_FILE = Join-Path $env:RUNNER_TEMP 'device-probe-injection.log'
+          function Write-ScopeFailure([string]$detail) {
+            $trace = if (Test-Path -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE) {
+              (Get-Content -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE | Select-Object -Last 20) -join ' / '
+            } else { 'no injection trace' }
+            $appError = Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5); Level=2} -MaxEvents 1 -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty Message
+            $diagnostic = "$detail / $trace / $appError"
+            if ($diagnostic.Length -gt 1400) { $diagnostic = $diagnostic.Substring(0, 1400) }
+            $diagnostic = $diagnostic -replace '%','%25' -replace '\r','%0D' -replace '\n','%0A'
+            Write-Output "::error title=Hook scope compiler child::$diagnostic"
+          }
           $env:WORKSPACE_HOOK_SCOPE = 'device'
           & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $scopeSmoke -Output $scopeResult
-          if ($LASTEXITCODE -ne 0) { throw "Hook scope smoke launch failed: $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+            Write-ScopeFailure "Launch failed: $LASTEXITCODE"
+            throw "Hook scope smoke launch failed: $LASTEXITCODE"
+          }
           $deadline = (Get-Date).AddSeconds(45)
           while (!(Test-Path -LiteralPath $scopeResult) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
           }
-          if (!(Test-Path -LiteralPath $scopeResult)) { throw 'Hook scope smoke did not finish' }
+          if (!(Test-Path -LiteralPath $scopeResult)) {
+            Write-ScopeFailure 'No result file after 45 seconds'
+            throw 'Hook scope smoke did not finish'
+          }
           $smoke = Get-Content -LiteralPath $scopeResult -Raw | ConvertFrom-Json
           if (!$smoke.CompilerChildSucceeded) {
-            $trace = if (Test-Path -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE) {
-              (Get-Content -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE | Select-Object -Last 20) -join ' / '
-            } else { 'no injection trace' }
-            $detail = [string]$smoke.FatalError
-            if ($detail.Length -gt 500) { $detail = $detail.Substring(0, 500) }
-            $diagnostic = "$trace / $detail" -replace '%','%25' -replace '\r','%0D' -replace '\n','%0A'
-            Write-Output "::error title=Hook scope compiler child::$diagnostic"
+            Write-ScopeFailure ([string]$smoke.FatalError)
             Write-Host $smoke.FatalError
             throw 'Hook scope compiler child failed'
           }
