@@ -28,6 +28,7 @@ public static class DeviceProbeNative
     {
         public uint PropertyId;
         public uint QueryType;
+        public byte AdditionalParameters;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -151,6 +152,7 @@ public static class DeviceProbeNative
         try
         {
             StorageQuery query = new StorageQuery();
+            uint querySize = (uint)Marshal.SizeOf(typeof(StorageQuery));
             byte[] data = new byte[shortBuffer ? 8 : 4096];
             uint returned;
             bool ok;
@@ -159,7 +161,7 @@ public static class DeviceProbeNative
                 evt = CreateEventW(IntPtr.Zero, true, false, null);
                 if (evt == IntPtr.Zero) return "EVENT_ERROR:" + Marshal.GetLastWin32Error();
                 Overlapped overlapped = new Overlapped { Event = evt };
-                ok = DeviceIoControl(device, IOCTL_STORAGE_QUERY_PROPERTY, ref query, 8,
+                ok = DeviceIoControl(device, IOCTL_STORAGE_QUERY_PROPERTY, ref query, querySize,
                     data, (uint)data.Length, out returned, ref overlapped);
                 int error = Marshal.GetLastWin32Error();
                 if (!ok && error == ERROR_IO_PENDING)
@@ -171,7 +173,7 @@ public static class DeviceProbeNative
             }
             else
             {
-                ok = DeviceIoControl(device, IOCTL_STORAGE_QUERY_PROPERTY, ref query, 8,
+                ok = DeviceIoControl(device, IOCTL_STORAGE_QUERY_PROPERTY, ref query, querySize,
                     data, (uint)data.Length, out returned, IntPtr.Zero);
             }
             if (!ok) return "QUERY_ERROR:" + Marshal.GetLastWin32Error();
