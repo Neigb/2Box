@@ -1,4 +1,5 @@
 #include "biz_initializer.h"
+#include "probe_trace.h"
 
 import std;
 import GlobalData;
@@ -148,17 +149,24 @@ void biz_initialize(SystemVersionInfo versionInfo, unsigned long long envFlag, u
 {
 	try
 	{
+		probe_trace("global data begin");
 		initialize_global_data(versionInfo, envFlag, envIndex, std::wstring_view{rootPath, rootPathCount});
+		probe_trace("rpc begin");
 		initialize_rpc();
+		probe_trace("hooks begin");
 		initialize_hook();
+		probe_trace("hooks complete");
 	}
 	catch (const std::exception& error)
 	{
+		probe_trace("initialization exception");
+		probe_trace(error.what());
 		OutputDebugStringA(error.what());
 		TerminateProcess(GetCurrentProcess(), 1);
 	}
 	catch (...)
 	{
+		probe_trace("initialization unknown exception");
 		TerminateProcess(GetCurrentProcess(), 1);
 	}
 }

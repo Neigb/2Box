@@ -61,6 +61,7 @@ jobs:
           $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
           $managedA = Join-Path $env:RUNNER_TEMP 'device-probe-managed-a.json'
           $managedB = Join-Path $env:RUNNER_TEMP 'device-probe-managed-b.json'
+          $env:WORKSPACE_DIAGNOSTIC_FILE = Join-Path $env:RUNNER_TEMP 'device-probe-injection.log'
           & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline
           if ($LASTEXITCODE -ne 0) { throw "Baseline probe failed: $LASTEXITCODE" }
           foreach ($output in @($managedA, $managedB)) {
@@ -70,7 +71,21 @@ jobs:
             while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) {
               Start-Sleep -Milliseconds 500
             }
-            if (!(Test-Path -LiteralPath $output)) { throw "Managed probe did not finish: $output" }
+            if (!(Test-Path -LiteralPath $output)) {
+              Write-Host 'Injection stages:'
+              if (Test-Path -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE) {
+                Get-Content -LiteralPath $env:WORKSPACE_DIAGNOSTIC_FILE
+              } else {
+                Write-Host '(no injected DLL trace)'
+              }
+              Write-Host 'Relevant processes:'
+              Get-Process WorkspaceHost, powershell -ErrorAction SilentlyContinue |
+                Select-Object ProcessName, Id, Responding, StartTime | Format-Table | Out-String | Write-Host
+              Write-Host 'Recent application errors:'
+              Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5); Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue |
+                Select-Object TimeCreated, ProviderName, Message | Format-List | Out-String | Write-Host
+              throw "Managed probe did not finish: $output"
+            }
           }
           & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
 
@@ -80,4 +95,12 @@ jobs:
         with:
           name: device-probe-results
           path: ${{ runner.temp }}\device-probe-*.json
+          if-no-files-found: ignore
+
+      - name: Upload injection trace
+        if: always() && matrix.configuration == 'Release' && matrix.platform == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-probe-injection-trace
+          path: ${{ runner.temp }}\device-probe-injection.log
           if-no-files-found: ignore
