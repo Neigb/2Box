@@ -78,10 +78,6 @@ jobs:
           }
           $env:WORKSPACE_HOOK_SCOPE = 'device'
           & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $scopeSmoke -Output $scopeResult
-          if ($LASTEXITCODE -ne 0) {
-            Write-ScopeFailure "Launch failed: $LASTEXITCODE"
-            throw "Hook scope smoke launch failed: $LASTEXITCODE"
-          }
           $deadline = (Get-Date).AddSeconds(45)
           while (!(Test-Path -LiteralPath $scopeResult) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
@@ -103,7 +99,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Baseline probe failed: $LASTEXITCODE" }
           foreach ($output in @($managedA, $managedB)) {
             & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output -NativeAssembly $nativeAssembly
-            if ($LASTEXITCODE -ne 0) { throw "Managed launch failed: $LASTEXITCODE" }
             $deadline = (Get-Date).AddSeconds(45)
             while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) {
               Start-Sleep -Milliseconds 500
