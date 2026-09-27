@@ -439,7 +439,7 @@ namespace hook
 		const std::string_view flagName = global::Data::get().envFlagNameA();
 		const DWORD serialSize = static_cast<DWORD>(flagName.size() + 1);
 		const DWORD originalSize = header->Size;
-		constexpr DWORD rawPropertiesOffset = FIELD_OFFSET(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties);
+		const DWORD rawPropertiesOffset = FIELD_OFFSET(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties);
 		if (originalSize < rawPropertiesOffset || originalSize > std::numeric_limits<DWORD>::max() - serialSize)
 		{
 			return bRet;
