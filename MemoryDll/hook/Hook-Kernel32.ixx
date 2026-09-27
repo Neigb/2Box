@@ -740,7 +740,7 @@ namespace hook
 	}
 
 	template <auto Trampoline>
-	BOOL WINAPI CloseHandle(HANDLE handle)
+	BOOL WINAPI HookCloseHandle(HANDLE handle)
 	{
 		const BOOL result = Trampoline(handle);
 		const DWORD error = GetLastError();
@@ -791,7 +791,10 @@ namespace hook
 		CREATE_HOOK_BY_POINTER(WaitForSingleObjectEx);
 		CREATE_HOOK_BY_POINTER(WaitForMultipleObjects);
 		CREATE_HOOK_BY_POINTER(WaitForMultipleObjectsEx);
-		CREATE_HOOK_BY_POINTER(CloseHandle);
+		create_hook_by_func_ptr<&::CloseHandle>().setHookFromGetter([&](auto trampolineConst)
+		{
+			return HookInfo{&HookCloseHandle<trampolineConst.value>};
+		});
 
 #undef CREATE_HOOK_BY_POINTER
 #undef CREATE_HOOK_BY_NAME
