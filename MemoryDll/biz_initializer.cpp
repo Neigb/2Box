@@ -146,6 +146,7 @@ void initialize_hook()
 	const DWORD length = GetEnvironmentVariableW(L"WORKSPACE_HOOK_SCOPE", scope, static_cast<DWORD>(std::size(scope)));
 	probe_trace(length == 6 && std::wstring_view{scope, length} == L"device" ? "hook scope device" :
 		length == 14 && std::wstring_view{scope, length} == L"device-minimal" ? "hook scope device minimal" :
+		length == 12 && std::wstring_view{scope, length} == L"device-async" ? "hook scope device async" :
 		length == 7 && std::wstring_view{scope, length} == L"process" ? "hook scope process" : "hook scope full");
 	hook::hook_all();
 }

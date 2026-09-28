@@ -774,7 +774,7 @@ namespace hook
 			}).funcAddress);
 	}
 
-	void hook_kernel32(bool deviceScope = false, bool completionHooks = true)
+	void hook_kernel32(bool deviceScope = false, bool completionHooks = true, bool waitAndCloseHooks = true)
 	{
 		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();
 		sys_info::SysDllMapHelper kernel32Mapped = sys_info::get_kernel32_mapped();
@@ -810,14 +810,17 @@ namespace hook
 			CREATE_HOOK_BY_POINTER(GetOverlappedResultEx);
 			CREATE_HOOK_BY_POINTER(GetQueuedCompletionStatus);
 			CREATE_HOOK_BY_POINTER(GetQueuedCompletionStatusEx);
-			CREATE_HOOK_BY_POINTER(WaitForSingleObject);
-			CREATE_HOOK_BY_POINTER(WaitForSingleObjectEx);
-			CREATE_HOOK_BY_POINTER(WaitForMultipleObjects);
-			CREATE_HOOK_BY_POINTER(WaitForMultipleObjectsEx);
-			create_hook_by_func_ptr<&::CloseHandle>().setHookFromGetter([&](auto trampolineConst)
+			if (waitAndCloseHooks)
 			{
-				return HookInfo{&HookCloseHandle<trampolineConst.value>};
-			});
+				CREATE_HOOK_BY_POINTER(WaitForSingleObject);
+				CREATE_HOOK_BY_POINTER(WaitForSingleObjectEx);
+				CREATE_HOOK_BY_POINTER(WaitForMultipleObjects);
+				CREATE_HOOK_BY_POINTER(WaitForMultipleObjectsEx);
+				create_hook_by_func_ptr<&::CloseHandle>().setHookFromGetter([&](auto trampolineConst)
+				{
+					return HookInfo{&HookCloseHandle<trampolineConst.value>};
+				});
+			}
 		}
 
 #undef CREATE_HOOK_BY_POINTER
