@@ -133,13 +133,8 @@ jobs:
             Write-ProbeFailure "Baseline probe failed: $LASTEXITCODE"
             throw "Baseline probe failed: $LASTEXITCODE"
           }
-          $managedIndex = 0
+          $env:WORKSPACE_HOOK_SCOPE = 'device-async'
           foreach ($output in @($managedA, $managedB)) {
-            if ($managedIndex -eq 0) {
-              $env:WORKSPACE_HOOK_SCOPE = 'device-async'
-            } else {
-              Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
-            }
             & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output -NativeAssembly $nativeAssembly
             $deadline = (Get-Date).AddSeconds(45)
             while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) {
@@ -161,12 +156,8 @@ jobs:
               Write-ProbeFailure "Managed probe did not finish: $output"
               throw "Managed probe did not finish: $output"
             }
-            if ($managedIndex -eq 0) {
-              Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
-              Start-Sleep -Seconds 1
-            }
-            $managedIndex++
           }
+          Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
           Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
           try {
             & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
