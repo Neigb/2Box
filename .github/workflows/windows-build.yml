@@ -76,6 +76,38 @@ jobs:
             $diagnostic = $diagnostic -replace '%','%25' -replace '\r','%0D' -replace '\n','%0A'
             Write-Output "::error title=Hook scope compiler child::$diagnostic"
           }
+          function Write-ProbeFailure([string]$detail) {
+            $reports = @($baseline, $managedA, $managedB) | ForEach-Object {
+              if (Test-Path -LiteralPath $_) {
+                $probe = Get-Content -LiteralPath $_ -Raw | ConvertFrom-Json
+                $kind = {
+                  param([string]$value)
+                  if (!$value) { 'empty' }
+                  elseif ($value -match '^(NO_|OPEN_ERROR|QUERY_ERROR|WAIT_ERROR|EVENT_ERROR|TIMEOUT)') { $value.Split(':')[0] }
+                  else { 'present' }
+                }
+                $summary = [ordered]@{
+                  File = [IO.Path]::GetFileName($_)
+                  FatalError = [string]$probe.FatalError
+                  WmiSerial = & $kind ([string]$probe.WmiSerial)
+                  AsyncWmiSerial = & $kind ([string]$probe.AsyncWmiSerial)
+                  WmiBiosSerial = & $kind ([string]$probe.WmiBiosSerial)
+                  WmiProductUuid = & $kind ([string]$probe.WmiProductUuid)
+                  WmiMac = & $kind ([string]$probe.WmiMac)
+                  WmiAdapterGuid = & $kind ([string]$probe.WmiAdapterGuid)
+                  StorageSerial = & $kind ([string]$probe.StorageSerial)
+                  AsyncStorageSerial = & $kind ([string]$probe.AsyncStorageSerial)
+                  ShortQuery = if ([string]$probe.ShortQuery -match '^SHORT_OK') { 'SHORT_OK' } else { 'other' }
+                  InvalidWmiClassStatus = [string]$probe.InvalidWmiClassStatus
+                }
+                "$($_ | Split-Path -Leaf)=" + ($summary | ConvertTo-Json -Compress)
+              }
+            }
+            $diagnostic = "$detail / " + ($reports -join ' / ')
+            if ($diagnostic.Length -gt 1400) { $diagnostic = $diagnostic.Substring(0, 1400) }
+            $diagnostic = $diagnostic -replace '%','%25' -replace '\r','%0D' -replace '\n','%0A'
+            Write-Output "::error title=Device probe assertion::$diagnostic"
+          }
           $env:WORKSPACE_HOOK_SCOPE = 'device-async'
           & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $scopeSmoke -Output $scopeResult
           $deadline = (Get-Date).AddSeconds(45)
@@ -97,7 +129,10 @@ jobs:
           Remove-Item Env:WORKSPACE_HOOK_SCOPE
           Start-Sleep -Seconds 1
           & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline -NativeAssembly $nativeAssembly
-          if ($LASTEXITCODE -ne 0) { throw "Baseline probe failed: $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+            Write-ProbeFailure "Baseline probe failed: $LASTEXITCODE"
+            throw "Baseline probe failed: $LASTEXITCODE"
+          }
           $managedIndex = 0
           foreach ($output in @($managedA, $managedB)) {
             if ($managedIndex -eq 0) {
@@ -123,6 +158,7 @@ jobs:
               Write-Host 'Recent application errors:'
               Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5); Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue |
                 Select-Object TimeCreated, ProviderName, Message | Format-List | Out-String | Write-Host
+              Write-ProbeFailure "Managed probe did not finish: $output"
               throw "Managed probe did not finish: $output"
             }
             if ($managedIndex -eq 0) {
@@ -132,7 +168,12 @@ jobs:
             $managedIndex++
           }
           Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
-          & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
+          try {
+            & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
+          } catch {
+            Write-ProbeFailure $_.Exception.ToString()
+            throw
+          }
 
       - name: Upload device probe results
         if: always() && matrix.configuration == 'Release' && matrix.platform == 'x64'
