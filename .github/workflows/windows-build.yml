@@ -76,7 +76,7 @@ jobs:
             $diagnostic = $diagnostic -replace '%','%25' -replace '\r','%0D' -replace '\n','%0A'
             Write-Output "::error title=Hook scope compiler child::$diagnostic"
           }
-          $env:WORKSPACE_HOOK_SCOPE = 'process'
+          $env:WORKSPACE_HOOK_SCOPE = 'device-minimal'
           & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $scopeSmoke -Output $scopeResult
           $deadline = (Get-Date).AddSeconds(45)
           while (!(Test-Path -LiteralPath $scopeResult) -and (Get-Date) -lt $deadline) {
@@ -87,7 +87,7 @@ jobs:
             throw 'Hook scope smoke did not finish'
           }
           $smoke = Get-Content -LiteralPath $scopeResult -Raw | ConvertFrom-Json
-          if ($smoke.Scope -ne 'process') { throw 'Hook scope was not inherited by managed PowerShell' }
+          if ($smoke.Scope -ne 'device-minimal') { throw 'Hook scope was not inherited by managed PowerShell' }
           if (!$smoke.CompilerChildSucceeded) {
             Write-ScopeFailure ([string]$smoke.FatalError)
             Write-Host $smoke.FatalError
