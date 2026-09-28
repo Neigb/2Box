@@ -16,7 +16,7 @@
 ## 验证门槛
 
 - [x] GitHub Actions 四种 Windows 构建全部通过；Release x64 打包二进制旧名称扫描通过（运行 36304622649）。
-- [x] GitHub Actions 运行探针通过，并检查同一环境跨接口一致、不同环境标识不同、失败与短缓冲区状态不变。运行 36365063788 的四种 Windows 构建和 x64 Release 探针全部通过；存储序列号由 runner 磁盘决定，缺失时保留 `NO_SERIAL`，结构、错误状态和短缓冲区路径仍被检查。
+- [x] GitHub Actions 运行探针通过，并检查同一环境跨接口一致、不同环境标识不同、失败与短缓冲区状态不变。运行 36366466535 的四种 Windows 构建和 x64 Release 探针全部通过；两个托管探针均在 `device-async` 范围下执行。存储序列号由 runner 磁盘决定，缺失时保留 `NO_SERIAL`，结构、错误状态和短缓冲区路径仍被检查。
 - [x] 排查托管 PowerShell 启动 `csc.exe` 时的子进程崩溃；`device-minimal` 和 `device-async` 均通过编译器子进程验证。对照运行显示崩溃集中在完整设备范围中的通用等待与 `CloseHandle` Hook，因此设备场景优先使用 `device-async`。
 - [ ] 在真实 Windows 桌面上启动一个依赖 WMI 和异步设备查询的目标程序，检查启动、退出、子进程继承和长期运行。
 
