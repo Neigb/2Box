@@ -10,19 +10,19 @@
 - [x] 数据目录只发现一份旧注册表 hive 且新文件不存在时自动迁移，保留现有环境配置；多份 hive 时不自动猜测。
 - [x] 主启动器直接创建目标进程，省去命令解释器中转；将 RPC 和批量 Hook 初始化移至目标进程入口，先在 DLL 加载阶段校验并复制注入参数。
 - [x] 批量 Hook 安装逐项检查 Detours 返回值，失败时中止事务，避免部分 Hook 静默缺失。
-- [x] 增加可选 `WORKSPACE_HOOK_SCOPE=device`：保留设备查询、WMI/网卡及 Kernel32 子进程创建 Hook，不安装 Ntdll 文件/注册表、User32 窗口、命名管道和额外启动入口 Hook；未设置时保持完整范围。
+- [x] 增加可选 Hook 范围：`device` 保留设备查询和完整异步完成通知，`device-async` 保留设备查询及 `GetOverlappedResult`/完成端口结果处理但跳过通用等待和 `CloseHandle`，`device-minimal` 仅保留同步设备查询；三者都跳过 Ntdll 文件/注册表、User32 窗口、命名管道和额外启动入口 Hook。未设置时保持完整范围。
 - [x] GitHub Actions 已配置 Debug/Release、x86/x64 构建；Release x64 增加原生与双环境运行探针，覆盖 WMI 同步/异步硬盘、BIOS/UUID/网卡、IP Helper、同步/重叠存储查询、短缓冲区和错误状态。
 
 ## 验证门槛
 
 - [x] GitHub Actions 四种 Windows 构建全部通过；Release x64 打包二进制旧名称扫描通过（运行 36304622649）。
-- [ ] GitHub Actions 运行探针通过，并检查上传的三份结果，确认同一环境跨接口一致、不同环境标识不同、失败与短缓冲区状态不变。运行 36313526295 已验证 WMI 和网卡字段，但存储查询因探针输入结构不完整而全部返回错误 24，成功路径仍待重跑。
-- [ ] 排查托管 PowerShell 启动 `csc.exe` 时的子进程崩溃；Actions 先让 PowerShell 与编译器子进程一起使用 `device` 范围，再验证默认完整范围。单独让子进程缩小范围会看不到父进程重定向的编译器响应文件。
+- [x] GitHub Actions 运行探针通过，并检查同一环境跨接口一致、不同环境标识不同、失败与短缓冲区状态不变。运行 36365063788 的四种 Windows 构建和 x64 Release 探针全部通过；存储序列号由 runner 磁盘决定，缺失时保留 `NO_SERIAL`，结构、错误状态和短缓冲区路径仍被检查。
+- [x] 排查托管 PowerShell 启动 `csc.exe` 时的子进程崩溃；`device-minimal` 和 `device-async` 均通过编译器子进程验证。对照运行显示崩溃集中在完整设备范围中的通用等待与 `CloseHandle` Hook，因此设备场景优先使用 `device-async`。
 - [ ] 在真实 Windows 桌面上启动一个依赖 WMI 和异步设备查询的目标程序，检查启动、退出、子进程继承和长期运行。
 
 ## 仍需覆盖的路径
 
 - [ ] WMI 脚本 `GetObject` 等其他入口，以及不同 COM 代理或回调对象实现；当前动态 Detour 只跟踪每种接口首次遇到的方法实现地址。
 - [ ] `NtDeviceIoControlFile` 直接调用、线程池 I/O 回调和不经过受 Hook 完成 API 的路径；当前重叠输出改写只在已覆盖的完成通知后触发。
-- [ ] 根据实际目标应用决定设备、文件、注册表、窗口和输入同步各组 Hook 的启用范围；当前提供全量默认与 `device` 可选范围，但仍需桌面环境评估配置粒度。
+- [ ] 根据实际目标应用决定设备、文件、注册表、窗口和输入同步各组 Hook 的启用范围；当前提供全量默认、`device`、`device-async` 和 `device-minimal` 范围，仍需桌面环境评估配置粒度。
 - [ ] 检查 SMBIOS/固件表、PnP、网络管理等其他设备信息入口；用户态 Hook 无法单独保证所有路径的设备隔离。

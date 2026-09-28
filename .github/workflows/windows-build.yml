@@ -98,7 +98,13 @@ jobs:
           Start-Sleep -Seconds 1
           & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline -NativeAssembly $nativeAssembly
           if ($LASTEXITCODE -ne 0) { throw "Baseline probe failed: $LASTEXITCODE" }
+          $managedIndex = 0
           foreach ($output in @($managedA, $managedB)) {
+            if ($managedIndex -eq 0) {
+              $env:WORKSPACE_HOOK_SCOPE = 'device-async'
+            } else {
+              Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
+            }
             & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output -NativeAssembly $nativeAssembly
             $deadline = (Get-Date).AddSeconds(45)
             while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) {
@@ -119,7 +125,13 @@ jobs:
                 Select-Object TimeCreated, ProviderName, Message | Format-List | Out-String | Write-Host
               throw "Managed probe did not finish: $output"
             }
+            if ($managedIndex -eq 0) {
+              Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
+              Start-Sleep -Seconds 1
+            }
+            $managedIndex++
           }
+          Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
           & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
 
       - name: Upload device probe results
