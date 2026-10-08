@@ -7,9 +7,6 @@
     <Filter Include="src\rpc">
       <UniqueIdentifier>{32744e25-02a0-44e8-bd86-41febf18d2c3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\load_self">
-      <UniqueIdentifier>{485ab3d9-735b-4630-b3cb-8025a2aee408}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\global_data">
       <UniqueIdentifier>{5888b607-907c-450f-b9f2-0f420e069933}</UniqueIdentifier>
     </Filter>
@@ -29,9 +26,6 @@
     </ClCompile>
     <ClCompile Include="rpc\RpcImplRequirement.cpp">
       <Filter>src\rpc</Filter>
-    </ClCompile>
-    <ClCompile Include="load_self\LoadSelf.cpp">
-      <Filter>src\load_self</Filter>
     </ClCompile>
     <ClCompile Include="global_data\GlobalData.ixx">
       <Filter>src\global_data</Filter>

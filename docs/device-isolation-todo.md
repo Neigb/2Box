@@ -1,5 +1,7 @@
 # 设备隔离与启动流程待办
 
+> 设备身份已重构为按能力启用的 DeviceIdentityProvider，默认不再安装设备类 Hook，`WORKSPACE_HOOK_SCOPE` 由宿主映射。新的设计与状态见 `device-identity-architecture.md` 与 `device-identity-implementation.md`；下文的 Hook 范围描述为重构前的状态。
+
 ## 已接入
 
 - [x] 修正 `GetWindow` 遍历、进程列表首项过滤，以及同步磁盘查询的长度与状态处理。
@@ -10,7 +12,7 @@
 - [x] 数据目录只发现一份旧注册表 hive 且新文件不存在时自动迁移，保留现有环境配置；多份 hive 时不自动猜测。
 - [x] 主启动器直接创建目标进程，省去命令解释器中转；将 RPC 和批量 Hook 初始化移至目标进程入口，先在 DLL 加载阶段校验并复制注入参数。
 - [x] 批量 Hook 安装逐项检查 Detours 返回值，失败时中止事务，避免部分 Hook 静默缺失。
-- [x] 增加可选 Hook 范围：`device` 保留设备查询和完整异步完成通知，`device-async` 保留设备查询及 `GetOverlappedResult`/完成端口结果处理但跳过通用等待和 `CloseHandle`，`device-minimal` 仅保留同步设备查询；三者都跳过 Ntdll 文件/注册表、User32 窗口、命名管道和额外启动入口 Hook。未设置时保持完整范围。
+- [x] 增加可选 Hook 范围：`device` 保留设备查询和完整异步完成通知，`device-async` 保留设备查询及 `GetOverlappedResult`/完成端口结果处理但跳过通用等待和 `CloseHandle`，`device-minimal` 仅保留同步设备查询；三者都跳过 Ntdll 文件/注册表、User32 窗口、命名管道和额外启动入口 Hook。未设置时保持完整范围，但不启用已知会影响编译器子进程的通用等待和 `CloseHandle` Hook。
 - [x] GitHub Actions 已配置 Debug/Release、x86/x64 构建；Release x64 增加原生与双环境运行探针，覆盖 WMI 同步/异步硬盘、BIOS/UUID/网卡、IP Helper、同步/重叠存储查询、短缓冲区和错误状态。
 
 ## 验证门槛

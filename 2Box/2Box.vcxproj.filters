@@ -84,32 +84,11 @@
     <ClCompile Include="app\MainApp.cpp">
       <Filter>src\app</Filter>
     </ClCompile>
-    <ClCompile Include="biz\symbols\SymbolLoader.ixx">
-      <Filter>src\biz\symbols</Filter>
-    </ClCompile>
-    <ClCompile Include="biz\http\WinHttp.ixx">
-      <Filter>src\biz\http</Filter>
-    </ClCompile>
     <ClCompile Include="ui\page\UI.Page-Home.ixx">
-      <Filter>src\ui\page</Filter>
-    </ClCompile>
-    <ClCompile Include="ui\page\UI.Page-Download.ixx">
       <Filter>src\ui\page</Filter>
     </ClCompile>
     <ClCompile Include="ui\page\UI.Page.ixx">
       <Filter>src\ui\page</Filter>
-    </ClCompile>
-    <ClCompile Include="ui\control\UI.LoadingIndicator.ixx">
-      <Filter>src\ui\control</Filter>
-    </ClCompile>
-    <ClCompile Include="ui\control\biz_ctrl\UI.FileStatusCtrl.ixx">
-      <Filter>src\ui\control\biz_ctrl</Filter>
-    </ClCompile>
-    <ClCompile Include="ui\control\biz_ctrl\UI.FileStatusCtrl.cpp">
-      <Filter>src\ui\control\biz_ctrl</Filter>
-    </ClCompile>
-    <ClCompile Include="ui\control\UI.LoadingIndicator.cpp">
-      <Filter>src\ui\control</Filter>
     </ClCompile>
     <ClCompile Include="ui\core\UI.Core.ixx">
       <Filter>src\ui\core</Filter>
@@ -158,9 +137,6 @@
     </ClCompile>
     <ClCompile Include="biz\launcher\Launcher.cpp">
       <Filter>src\biz\launcher</Filter>
-    </ClCompile>
-    <ClCompile Include="biz\injector\Injector.ixx">
-      <Filter>src\biz\injector</Filter>
     </ClCompile>
     <ClCompile Include="biz\env\Env.ixx">
       <Filter>src\biz\env</Filter>

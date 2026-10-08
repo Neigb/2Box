@@ -9,6 +9,15 @@ permissions:
   contents: read
 
 jobs:
+  portable-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Device identity core tests
+        run: ./tests/run-device-identity-tests.sh
+
   build:
     runs-on: windows-2022
     strategy:
@@ -165,6 +174,64 @@ jobs:
             Write-ProbeFailure $_.Exception.ToString()
             throw
           }
+
+      # The two steps below exercise the new launch-config path (policy file, default mode). They are informational
+      # until they have been seen passing on a Windows runner; promote them by removing continue-on-error.
+      - name: Probe default multi-instance mode (device simulation must stay off)
+        if: matrix.configuration == 'Release' && matrix.platform == 'x64'
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $probe = Join-Path $env:GITHUB_WORKSPACE 'tests\windows-device-probe.ps1'
+          $check = Join-Path $env:GITHUB_WORKSPACE 'tests\check-windows-default-mode.ps1'
+          $cli = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\WorkspaceCli.exe'
+          $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
+          $managed = Join-Path $env:RUNNER_TEMP 'device-probe-default.json'
+          $nativeAssembly = Join-Path $env:RUNNER_TEMP 'device-probe-native.dll'
+          Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
+          Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 1
+          & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $managed -NativeAssembly $nativeAssembly
+          $deadline = (Get-Date).AddSeconds(45)
+          while (!(Test-Path -LiteralPath $managed) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+          Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (!(Test-Path -LiteralPath $managed)) { throw 'Default-mode probe did not finish' }
+          & $check -Baseline $baseline -ManagedDefault $managed
+
+      - name: Probe per-application device policy
+        if: matrix.configuration == 'Release' && matrix.platform == 'x64'
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $probe = Join-Path $env:GITHUB_WORKSPACE 'tests\windows-device-probe.ps1'
+          $check = Join-Path $env:GITHUB_WORKSPACE 'tests\check-windows-device-probe.ps1'
+          $cli = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\WorkspaceCli.exe'
+          $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
+          $outputs = @((Join-Path $env:RUNNER_TEMP 'device-probe-policy-a.json'), (Join-Path $env:RUNNER_TEMP 'device-probe-policy-b.json'))
+          $nativeAssembly = Join-Path $env:RUNNER_TEMP 'device-probe-native.dll'
+          $dataDirectory = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\Env\data'
+          $policy = Join-Path $dataDirectory 'device-policy.ini'
+          Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
+          Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 1
+          New-Item -ItemType Directory -Force -Path $dataDirectory | Out-Null
+          Set-Content -LiteralPath $policy -Value @('[app]', 'match = powershell.exe', 'capabilities = storage, storage-async, network, smbios, os, wmi')
+          try {
+            foreach ($output in $outputs) {
+              & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output -NativeAssembly $nativeAssembly
+              $deadline = (Get-Date).AddSeconds(45)
+              while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+              if (!(Test-Path -LiteralPath $output)) { throw "Policy probe did not finish: $output" }
+            }
+          } finally {
+            Remove-Item -LiteralPath $policy -ErrorAction SilentlyContinue
+            Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
+          }
+          & $check -Baseline $baseline -ManagedA $outputs[0] -ManagedB $outputs[1] -ExpectMachineGuid
 
       - name: Upload device probe results
         if: always() && matrix.configuration == 'Release' && matrix.platform == 'x64'

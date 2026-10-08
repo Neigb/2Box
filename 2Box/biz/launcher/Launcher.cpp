@@ -1,3 +1,5 @@
+module;
+#include "DeviceLaunch.hpp"
 module Launcher;
 
 import "sys_defs.h";
@@ -6,6 +8,7 @@ import "sys_defs.h";
 import "sys_defs.hpp";
 #endif
 
+import std;
 import MainApp;
 import EssentialData;
 import Utility.SystemInfo;
@@ -13,7 +16,65 @@ import Biz.Core;
 
 namespace
 {
-	PROCESS_INFORMATION create_and_inject(const biz::Env* env, std::wstring_view exePath, std::wstring_view params)
+	// Decide, for this one launch, which hooks the target gets and whether a device profile is active.
+	// Default (no policy rule, no WORKSPACE_HOOK_SCOPE) is plain multi-instance isolation: no device
+	// capability, no profile created, nothing device-related sent to the target.
+	devid::LaunchConfig resolve_launch_config(const std::shared_ptr<biz::Env>& env, std::wstring_view exePath)
+	{
+		namespace fs = std::filesystem;
+		const devid::InstanceIdentity instance = env->getInstanceIdentity();
+		devid::LaunchConfig config;
+		config.sessionId = instance.sessionId;
+		config.objectNamespaceId = instance.objectNamespaceId;
+
+		// Diagnostic / CI override, mapped here so the injected DLL never reads environment variables.
+		wchar_t scope[16]{};
+		const DWORD scopeLength = GetEnvironmentVariableW(L"WORKSPACE_HOOK_SCOPE", scope, static_cast<DWORD>(std::size(scope)));
+		std::string scopeName;
+		if (scopeLength != 0 && scopeLength < std::size(scope))
+		{
+			for (DWORD i = 0; i < scopeLength; ++i) scopeName.push_back(scope[i] < 128 ? static_cast<char>(scope[i]) : '?');
+		}
+		const devid::ScopeMapping legacy = devid::map_legacy_scope(scopeName);
+
+		std::uint32_t capabilities = devid::kCapNone;
+		if (legacy.overrides)
+		{
+			config.hooks = legacy.hooks;
+			capabilities = legacy.capabilities;
+		}
+		else
+		{
+			const fs::path policyPath{fs::path{app().exeDir()} / fs::path{L"Env\\data\\device-policy.ini"}};
+			std::error_code ec;
+			if (fs::exists(policyPath, ec))
+			{
+				std::ifstream file{policyPath, std::ios::binary};
+				const std::string text{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+				const devid::DevicePolicy policy = devid::parse_policy(text);
+				if (!policy.errors.empty())
+				{
+					throw std::runtime_error(std::format("device-policy.ini: {}", policy.errors.front()));
+				}
+				capabilities = policy.resolve(devid::detail::path_to_utf8(fs::path{exePath}));
+			}
+		}
+		config.capabilities = devid::normalize_capabilities(capabilities);
+
+		if (config.deviceSimulationEnabled())
+		{
+			const devid::DeviceProfileStore store{biz::env_mgr().deviceProfileDirectory()};
+			std::seed_seq seed{std::random_device{}(), std::random_device{}(), std::random_device{}(), std::random_device{}()};
+			std::mt19937_64 rng{seed};
+			// Created and bound exactly once per environment; later launches (and restarts) load the same file.
+			config.profile = devid::obtain_profile(store, env->getDeviceProfileId(), [&] { return rng(); },
+				[&](std::uint64_t profileId) { biz::env_mgr().bindDeviceProfile(env, profileId); });
+		}
+		return config;
+	}
+
+	PROCESS_INFORMATION create_and_inject(const biz::Env* env, std::wstring_view exePath, std::wstring_view params,
+	                                      const devid::LaunchConfig& launchConfig)
 	{
 		PROCESS_INFORMATION procInfo = {nullptr};
 		STARTUPINFOW startupInfo = {sizeof(startupInfo)};
@@ -30,16 +91,20 @@ namespace
 		try
 		{
 			const std::wstring_view rootPath = app().exeDir();
+			const std::string launchConfigText = devid::encode_launch_config(launchConfig);
 			const std::uint32_t rootPathCount = static_cast<std::uint32_t>(rootPath.length());
 			const std::uint32_t rootPathSize = rootPathCount * sizeof(wchar_t);
-			const std::uint32_t paramsSize = sizeof(DetourInjectParams) + rootPathSize;
+			const std::uint32_t launchConfigSize = static_cast<std::uint32_t>(launchConfigText.size());
+			const std::uint32_t paramsSize = FIELD_OFFSET(DetourInjectParams, rootPath) + rootPathSize + launchConfigSize;
 			std::vector<std::byte> buffer(paramsSize);
 			DetourInjectParams* injectParams = reinterpret_cast<DetourInjectParams*>(buffer.data());
 			injectParams->version = biz::get_core_data().version;
 			injectParams->envFlag = env->getFlag();
 			injectParams->envIndex = env->getIndex();
 			injectParams->rootPathCount = rootPathCount;
+			injectParams->launchConfigBytes = launchConfigSize;
 			memcpy(injectParams->rootPath, rootPath.data(), rootPathSize);
+			memcpy(reinterpret_cast<std::byte*>(injectParams->rootPath) + rootPathSize, launchConfigText.data(), launchConfigSize);
 			if (!DetourCopyPayloadToProcess(procInfo.hProcess, DETOUR_INJECT_PARAMS_GUID, injectParams, paramsSize))
 			{
 				throw std::runtime_error(std::format("copy payload failed, error code: {}", GetLastError()));
@@ -101,7 +166,9 @@ namespace biz
 		{
 			env = env_mgr().createEnv();
 		}
-		const PROCESS_INFORMATION procInfo = create_and_inject(env.get(), exePath, params);
+		// Resolve before creating the process: a damaged profile or policy file must fail the launch, not start a different machine.
+		const devid::LaunchConfig launchConfig = resolve_launch_config(env, exePath);
+		const PROCESS_INFORMATION procInfo = create_and_inject(env.get(), exePath, params, launchConfig);
 		ResumeThread(procInfo.hThread);
 		CloseHandle(procInfo.hThread);
 		CloseHandle(procInfo.hProcess);

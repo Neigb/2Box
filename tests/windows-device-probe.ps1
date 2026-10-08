@@ -133,6 +133,80 @@ public static class DeviceProbeNative
     public static string[] AdapterMacs() { return AdapterFields(false); }
     public static string[] AdapterGuids() { return AdapterFields(true); }
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint GetSystemFirmwareTable(uint signature, uint tableId, byte[] buffer, uint size);
+
+    private static void SwapBytes(byte[] data, int a, int b)
+    {
+        byte tmp = data[a];
+        data[a] = data[b];
+        data[b] = tmp;
+    }
+
+    // Raw SMBIOS table (what GetSystemFirmwareTable reports) -> "UUID|SystemSerial", or NO_SMBIOS.
+    // Used to cross-check the raw table against the WMI view of the same data.
+    public static string SmbiosSystem()
+    {
+        const uint RSMB = 0x52534D42;
+        uint size = GetSystemFirmwareTable(RSMB, 0, null, 0);
+        if (size < 8) return "NO_SMBIOS";
+        byte[] data = new byte[size];
+        uint written = GetSystemFirmwareTable(RSMB, 0, data, size);
+        if (written < 8 || written > size) return "NO_SMBIOS";
+        int major = data[1];
+        int minor = data[2];
+        long declared = BitConverter.ToUInt32(data, 4);
+        int end = (int)Math.Min((long)written, 8L + declared);
+        int pos = 8;
+        while (pos + 4 <= end)
+        {
+            int type = data[pos];
+            int formatted = data[pos + 1];
+            if (formatted < 4 || pos + formatted > end) break;
+            int strings = pos + formatted;
+            int scan = strings;
+            while (scan + 1 < end && !(data[scan] == 0 && data[scan + 1] == 0)) scan++;
+            if (scan + 1 >= end) break;
+            if (type == 1 && formatted >= 0x19)
+            {
+                byte[] uuid = new byte[16];
+                Array.Copy(data, pos + 8, uuid, 0, 16);
+                if (major > 2 || (major == 2 && minor >= 6))
+                {
+                    SwapBytes(uuid, 0, 3);
+                    SwapBytes(uuid, 1, 2);
+                    SwapBytes(uuid, 4, 5);
+                    SwapBytes(uuid, 6, 7);
+                }
+                StringBuilder text = new StringBuilder();
+                for (int i = 0; i < 16; ++i)
+                {
+                    if (i == 4 || i == 6 || i == 8 || i == 10) text.Append('-');
+                    text.Append(uuid[i].ToString("X2"));
+                }
+                string serial = "";
+                int wanted = data[pos + 7];
+                int begin = strings;
+                int current = 1;
+                while (wanted > 0 && begin < scan && current < wanted)
+                {
+                    while (begin < scan && data[begin] != 0) begin++;
+                    begin++;
+                    current++;
+                }
+                if (wanted > 0 && current == wanted && begin < scan)
+                {
+                    int finish = begin;
+                    while (finish < scan && data[finish] != 0) finish++;
+                    serial = Encoding.ASCII.GetString(data, begin, finish - begin);
+                }
+                return text.ToString() + "|" + serial;
+            }
+            pos = scan + 2;
+        }
+        return "NO_SMBIOS";
+    }
+
     private static string Serial(byte[] data, uint returned)
     {
         if (returned < 36) return "NO_DESCRIPTOR";
@@ -221,6 +295,8 @@ $result = [ordered]@{
     WmiAdapterGuid = if ($adapter) { [string]$adapter.GUID } else { '' }
     IpHelperMacs = @([DeviceProbeNative]::AdapterMacs())
     IpHelperGuids = @([DeviceProbeNative]::AdapterGuids())
+    MachineGuid = [string](Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid -ErrorAction SilentlyContinue).MachineGuid
+    SmbiosSystem = [DeviceProbeNative]::SmbiosSystem()
     StorageSerial = [DeviceProbeNative]::Read($false, $false)
     AsyncStorageSerial = [DeviceProbeNative]::Read($true, $false)
     ShortQuery = [DeviceProbeNative]::Read($false, $true)

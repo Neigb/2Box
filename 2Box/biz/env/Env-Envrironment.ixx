@@ -1,3 +1,5 @@
+module;
+#include "InstanceIdentity.hpp"
 export module Env:Envrironment;
 
 import "sys_defs.h";
@@ -171,8 +173,8 @@ namespace biz
 	{
 	public:
 		Env(std::uint32_t index, std::uint64_t flag,
-		    std::wstring_view flagName, std::wstring_view name)
-			: m_index(index), m_flag(flag), m_flagName(flagName), m_name(name)
+		    std::wstring_view flagName, std::wstring_view name, std::uint64_t deviceProfileId = 0)
+			: m_index(index), m_flag(flag), m_flagName(flagName), m_name(name), m_deviceProfileId(deviceProfileId)
 		{
 		}
 
@@ -181,6 +183,11 @@ namespace biz
 		std::uint64_t getFlag() const { return m_flag; }
 		std::wstring_view getFlagName() const { return m_flagName; }
 		std::wstring_view getName() const { return m_name; }
+		// Who this instance is. Carries no device information.
+		devid::InstanceIdentity getInstanceIdentity() const;
+		// Which device profile this environment owns (0: none). Independent of the instance identity above.
+		std::uint64_t getDeviceProfileId() const { return m_deviceProfileId.load(std::memory_order_acquire); }
+		void setDeviceProfileId(std::uint64_t profileId) { m_deviceProfileId.store(profileId, std::memory_order_release); }
 		std::string ensureDllInDeviceAndReturnPath() const;
 		void deleteDllFromDevice() const;
 
@@ -217,6 +224,7 @@ namespace biz
 		std::uint64_t m_flag{0};
 		std::wstring m_flagName;
 		std::wstring m_name;
+		std::atomic<std::uint64_t> m_deviceProfileId{0};
 
 		HandleWaiter m_waiter;
 		mutable std::shared_mutex m_mutex;

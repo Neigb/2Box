@@ -10,9 +10,15 @@ namespace hook
 	void rewrite_adapter_name(char* name)
 	{
 		if (!name) return;
-		const std::size_t length = std::strlen(name);
-		const std::string value = global::Data::get().virtualGuid(std::string_view{name, length});
-		if (value.size() == length) std::memcpy(name, value.data(), length);
+		const std::string_view source{name};
+		const std::size_t brace = source.find('{');
+		const std::size_t start = brace == std::string_view::npos ? 0 : brace;
+		const std::size_t length = brace == std::string_view::npos ? 36 : 38;
+		if (source.size() - start < length) return;
+		const std::string_view guid = source.substr(start, length);
+		if (brace != std::string_view::npos && guid.back() != '}') return;
+		const std::string value = global::Data::get().virtualAdapterGuid(guid);
+		if (value.size() == guid.size()) std::memcpy(name + start, value.data(), value.size());
 	}
 
 	template <auto Trampoline>

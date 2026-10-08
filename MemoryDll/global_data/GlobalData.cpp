@@ -1,5 +1,8 @@
 // ReSharper disable CppUseRangeAlgorithm
 module;
+#include "DeviceIdentityProvider.hpp"
+#include "DeviceLaunch.hpp"
+#include "InstanceIdentity.hpp"
 // #define _CRT_SECURE_NO_WARNINGS
 // #include <cstdio>
 module GlobalData;
@@ -12,34 +15,9 @@ import "sys_defs.hpp";
 
 namespace
 {
-	std::uint64_t hash_identity(std::uint64_t seed, std::string_view source)
+	std::wstring widen_ascii(const std::string& text)
 	{
-		std::uint64_t hash = 14695981039346656037ULL ^ seed;
-		for (const unsigned char c : source)
-		{
-			hash = (hash ^ c) * 1099511628211ULL;
-		}
-		return hash;
-	}
-
-	std::string normalize_disk_serial(std::string_view raw, bool ataWordOrder)
-	{
-		std::string value{raw};
-		if (ataWordOrder)
-		{
-			for (std::size_t i = 0; i + 1 < value.size(); i += 2)
-			{
-				std::swap(value[i], value[i + 1]);
-			}
-		}
-		const auto isPadding = [](char c) { return c == '\0' || c == ' ' || c == '\t'; };
-		while (!value.empty() && isPadding(value.front())) value.erase(value.begin());
-		while (!value.empty() && isPadding(value.back())) value.pop_back();
-		for (char& c : value)
-		{
-			if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-		}
-		return value;
+		return std::wstring{text.begin(), text.end()};
 	}
 
 	// void InitConsole()
@@ -103,108 +81,79 @@ namespace global
 {
 	std::string Data::virtualDiskSerial(std::string_view serial, bool ataWordOrder) const
 	{
-		const std::string normalized = normalize_disk_serial(serial, ataWordOrder);
-		if (normalized.empty()) return {};
-		std::lock_guard lock(m_diskMutex);
-		if (const auto found = m_virtualDiskSerials.find(normalized); found != m_virtualDiskSerials.end())
-		{
-			return found->second;
-		}
-		std::string result = std::format("{:016X}", hash_identity(m_envFlag ^ 0x4449534BULL, normalized));
-		result.resize(std::min(result.size(), normalized.size()));
-		m_virtualDiskSerials.emplace(normalized, result);
-		m_virtualDiskSerials.emplace(result, result);
-		return result;
+		if (!storageSimulated()) return std::string{serial};
+		return m_device->virtualSerial(devid::SerialDomain::Disk, serial, ataWordOrder);
 	}
 
-	std::string Data::virtualGuid(std::string_view guid) const
+	std::string Data::virtualSystemSerial(std::string_view serial) const
 	{
-		const std::string_view source = guid;
-		const bool wrapped = guid.size() == 38 && guid.front() == '{' && guid.back() == '}';
-		if (wrapped) guid = guid.substr(1, 36);
-		if (guid.size() != 36) return std::string{source};
-		std::string normalized{guid};
-		for (std::size_t i = 0; i < normalized.size(); ++i)
-		{
-			char& c = normalized[i];
-			if (i == 8 || i == 13 || i == 18 || i == 23)
-			{
-				if (c != '-') return std::string{source};
-			}
-			else if (c >= 'a' && c <= 'f') c = static_cast<char>(c - 'a' + 'A');
-			else if (!((c >= 'A' && c <= 'F') || (c >= '0' && c <= '9')))
-				return std::string{source};
-		}
-		std::lock_guard lock(m_guidMutex);
-		std::string result;
-		if (const auto found = m_virtualGuids.find(normalized); found != m_virtualGuids.end())
-		{
-			result = found->second;
-		}
-		else
-		{
-			std::string hex = std::format("{:016X}{:016X}",
-				hash_identity(m_envFlag ^ 0x4755494441ULL, normalized),
-				hash_identity(m_envFlag ^ 0x4755494442ULL, normalized));
-			hex[12] = '4';
-			hex[16] = '8';
-			result = std::format("{}-{}-{}-{}-{}", hex.substr(0, 8), hex.substr(8, 4),
-				hex.substr(12, 4), hex.substr(16, 4), hex.substr(20));
-			m_virtualGuids.emplace(normalized, result);
-			m_virtualGuids.emplace(result, result);
-		}
-		return wrapped ? std::format("{{{}}}", result) : result;
+		if (!smbiosSimulated()) return std::string{serial};
+		return m_device->virtualSerial(devid::SerialDomain::SmbiosSystem, serial);
+	}
+
+	std::string Data::virtualBoardSerial(std::string_view serial) const
+	{
+		if (!smbiosSimulated()) return std::string{serial};
+		return m_device->virtualSerial(devid::SerialDomain::SmbiosBoard, serial);
+	}
+
+	std::string Data::virtualChassisSerial(std::string_view serial) const
+	{
+		if (!smbiosSimulated()) return std::string{serial};
+		return m_device->virtualSerial(devid::SerialDomain::SmbiosChassis, serial);
+	}
+
+	std::string Data::virtualPnpInstance(bool network, std::string_view suffix) const
+	{
+		if (network ? !networkSimulated() : !storageSimulated()) return std::string{suffix};
+		return m_device->virtualSerial(network ? devid::SerialDomain::PnpNetworkInstance : devid::SerialDomain::PnpStorageInstance, suffix);
+	}
+
+	std::string Data::virtualAdapterGuid(std::string_view guid) const
+	{
+		if (!networkSimulated()) return std::string{guid};
+		return m_device->virtualAdapterGuid(guid);
+	}
+
+	std::string Data::virtualSystemUuid(std::string_view uuid) const
+	{
+		if (!smbiosSimulated()) return std::string{uuid};
+		return m_device->virtualSystemUuid(uuid);
+	}
+
+	std::string Data::virtualMachineGuid(std::string_view guid) const
+	{
+		if (!osSimulated()) return std::string{guid};
+		return m_device->virtualMachineGuid(guid);
 	}
 
 	void Data::virtualMac(std::uint8_t* address, std::size_t length) const
 	{
-		if (!address || length != 6) return;
-		std::uint64_t originalKey = 0;
-		for (std::size_t i = 0; i < length; ++i)
-		{
-			originalKey |= std::uint64_t{address[i]} << (i * 8);
-		}
-		std::lock_guard lock(m_macMutex);
-		if (const auto found = m_virtualMacs.find(originalKey); found != m_virtualMacs.end())
-		{
-			for (std::size_t i = 0; i < length; ++i)
-			{
-				address[i] = static_cast<std::uint8_t>(found->second >> (i * 8));
-			}
-			return;
-		}
-		const std::string_view source{reinterpret_cast<const char*>(address), length};
-		const std::uint64_t hash = hash_identity(m_envFlag ^ 0x4D4143ULL, source);
-		const std::array original{address[3], address[4], address[5]};
-		for (std::size_t i = 0; i < 3; ++i)
-		{
-			address[i + 3] = static_cast<std::uint8_t>(hash >> (i * 8));
-		}
-		if (original[0] == address[3] && original[1] == address[4] && original[2] == address[5])
-		{
-			address[5] ^= 1;
-		}
-		std::uint64_t virtualKey = 0;
-		for (std::size_t i = 0; i < length; ++i)
-		{
-			virtualKey |= std::uint64_t{address[i]} << (i * 8);
-		}
-		try
-		{
-			m_virtualMacs.emplace(originalKey, virtualKey);
-			m_virtualMacs.emplace(virtualKey, virtualKey);
-		}
-		catch (...) {}
+		if (!networkSimulated()) return;
+		m_device->virtualMac(address, length);
 	}
 
-	void Data::initialize(SystemVersionInfo versionInfo, std::uint64_t envFlag, unsigned long envIndex, std::wstring_view rootPath)
+	void Data::rewriteSmbiosTable(std::uint8_t* table, std::size_t size) const
+	{
+		if (!smbiosSimulated()) return;
+		m_device->rewriteSmbiosTable(table, size);
+	}
+
+	void Data::initialize(SystemVersionInfo versionInfo, const devid::InstanceIdentity& instance, std::wstring_view rootPath,
+	                      devid::LaunchConfig launchConfig, std::string launchConfigText)
 	{
 		m_sysVersion = versionInfo;
-		m_envFlag = envFlag;
-		m_envIndex = envIndex;
-		m_envFlagName = std::format(L"{:016X}", envFlag);
-		m_envFlagNameA = std::format("{:016X}", envFlag);
+		m_instance = instance;
+		m_objectNamespaceNameA = instance.objectNamespaceSuffix();
+		m_objectNamespaceName = widen_ascii(m_objectNamespaceNameA);
+		m_registrySuffixName = widen_ascii(instance.registrySuffix());
 		m_rootPath = rootPath;
+		m_hookPlan = devid::make_hook_plan(launchConfig);
+		m_launchConfigText = std::move(launchConfigText);
+		if (launchConfig.profile && launchConfig.deviceSimulationEnabled())
+		{
+			m_device = std::make_unique<devid::DeviceIdentityProvider>(*launchConfig.profile);
+		}
 
 		initializePrivilegesAbout();
 		initializeRegistry();
@@ -280,7 +229,7 @@ namespace global
 			namespace fs = std::filesystem;
 			if (const size_t driverPos = knownFolderPath.find(driverMarker); driverPos != std::wstring_view::npos)
 			{
-				const fs::path indexPath{std::format(L"{}", m_envIndex)};
+				const fs::path indexPath{std::format(L"{}", m_instance.instanceIndex)};
 				const fs::path relativePath{knownFolderPath.substr(driverPos + driverMarker.length())};
 				const fs::path redirectPath{fs::weakly_canonical(fs::path{m_rootPath} / fs::path{L"Env"} / indexPath / relativePath)};
 				return std::format(L"{}{}", PREFIX_TO_CHECK, redirectPath.native());
@@ -311,7 +260,7 @@ namespace global
 			[&]()-> HKEY
 			{
 				namespace fs = std::filesystem;
-				const fs::path envFile{fs::weakly_canonical(fs::path{m_rootPath} / fs::path{L"Env"} / fs::path{std::format(L"{}", m_envIndex)} / fs::path{m_envFlagName})};
+				const fs::path envFile{fs::weakly_canonical(fs::path{m_rootPath} / fs::path{L"Env"} / fs::path{std::format(L"{}", m_instance.instanceIndex)} / fs::path{widen_ascii(m_instance.hiveName())})};
 				HKEY hKey;
 				if (RegLoadAppKeyW(envFile.native().c_str(), &hKey, KEY_ALL_ACCESS, 0, 0) != ERROR_SUCCESS)
 				{
@@ -327,11 +276,11 @@ namespace global
 		namespace fs = std::filesystem;
 		if constexpr (CURRENT_ARCH_BIT == ArchBit::Bit64)
 		{
-			m_dllFullPath = fs::path{fs::weakly_canonical(fs::path{m_rootPath} / fs::path{L"bin"} / fs::path{std::format(L"{}_64.bin", m_envFlagName)})}.string();
+			m_dllFullPath = fs::path{fs::weakly_canonical(fs::path{m_rootPath} / fs::path{L"bin"} / fs::path{std::format(L"{}_64.bin", widen_ascii(m_instance.dllStem()))})}.string();
 		}
 		else
 		{
-			m_dllFullPath = fs::path{fs::weakly_canonical(fs::path{m_rootPath} / fs::path{L"bin"} / fs::path{std::format(L"{}_32.bin", m_envFlagName)})}.string();
+			m_dllFullPath = fs::path{fs::weakly_canonical(fs::path{m_rootPath} / fs::path{L"bin"} / fs::path{std::format(L"{}_32.bin", widen_ascii(m_instance.dllStem()))})}.string();
 		}
 	}
 

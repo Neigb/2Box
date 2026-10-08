@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Baseline,
     [Parameter(Mandatory = $true)][string]$ManagedA,
-    [Parameter(Mandatory = $true)][string]$ManagedB
+    [Parameter(Mandatory = $true)][string]$ManagedB,
+    [switch]$ExpectMachineGuid
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,6 +75,34 @@ if ($base.WmiAdapterGuid) {
     Check ($first.WmiAdapterGuid -ne $second.WmiAdapterGuid) 'WMI adapter GUID is not unique per environment'
     if ($base.IpHelperGuids -contains $base.WmiAdapterGuid) {
         Check ($first.IpHelperGuids -contains $first.WmiAdapterGuid) 'WMI and IP Helper adapter GUIDs disagree'
+    }
+}
+
+if ($ExpectMachineGuid -and $base.MachineGuid) {
+    Check ($base.MachineGuid -ne $first.MachineGuid) 'MachineGuid was not rewritten'
+    Check ($first.MachineGuid -ne $second.MachineGuid) 'MachineGuid is not unique per environment'
+    Check ($first.MachineGuid -match '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') 'MachineGuid format is invalid'
+}
+
+# Raw SMBIOS table versus WMI: the same data must read the same through both APIs.
+if ($base.SmbiosSystem -and $base.SmbiosSystem -ne 'NO_SMBIOS' -and $first.SmbiosSystem -and $second.SmbiosSystem) {
+    $baseParts = ([string]$base.SmbiosSystem).Split('|', 2)
+    $firstParts = ([string]$first.SmbiosSystem).Split('|', 2)
+    $secondParts = ([string]$second.SmbiosSystem).Split('|', 2)
+    if ($baseParts[0] -ne 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF') {
+        Check ($baseParts[0] -ne $firstParts[0]) 'SMBIOS table UUID was not rewritten'
+        Check ($firstParts[0] -ne $secondParts[0]) 'SMBIOS table UUID is not unique per environment'
+        if ($base.WmiProductUuid -eq $baseParts[0]) {
+            Check ($first.WmiProductUuid -eq $firstParts[0]) 'WMI and SMBIOS table UUIDs disagree'
+        }
+    }
+    if ($baseParts[1]) {
+        Check ($baseParts[1] -ne $firstParts[1]) 'SMBIOS table system serial was not rewritten'
+        Check ($firstParts[1] -ne $secondParts[1]) 'SMBIOS table system serial is not unique per environment'
+        Check ($baseParts[1].Length -eq $firstParts[1].Length) 'SMBIOS table system serial length changed'
+        if ($base.WmiBiosSerial -eq $baseParts[1]) {
+            Check ($first.WmiBiosSerial -eq $firstParts[1]) 'WMI BIOS serial and SMBIOS table serial disagree'
+        }
     }
 }
 

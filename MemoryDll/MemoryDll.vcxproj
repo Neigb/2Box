@@ -107,7 +107,7 @@
       <BuildStlModules>true</BuildStlModules>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ExceptionHandling>Async</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -133,7 +133,7 @@
       <BuildStlModules>true</BuildStlModules>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ExceptionHandling>Async</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -156,7 +156,7 @@
       <BuildStlModules>true</BuildStlModules>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ExceptionHandling>Async</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -182,7 +182,7 @@
       <BuildStlModules>true</BuildStlModules>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ExceptionHandling>Async</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -209,12 +209,6 @@
     <ClCompile Include="hook\Hook-Shell32.ixx" />
     <ClCompile Include="hook\Hook-User32.ixx" />
     <ClCompile Include="hook\Hook.ixx" />
-    <ClCompile Include="load_self\LoadSelf.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="rpc\RpcClient.ixx" />
     <ClCompile Include="rpc\RpcImplRequirement.cpp" />
   </ItemGroup>

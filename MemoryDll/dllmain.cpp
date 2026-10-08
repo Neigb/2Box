@@ -1,8 +1,3 @@
-#ifdef REFLECTIVE_INJECT
-#ifndef _WIN64
-#pragma comment(linker, "/EXPORT:initialize=_initialize@4")
-#endif
-#endif
 
 import "sys_defs.h";
 import std;
@@ -10,7 +5,6 @@ import std;
 #include "biz_initializer.h"
 #include "probe_trace.h"
 
-#ifndef REFLECTIVE_INJECT
 namespace
 {
 	using ProcessEntry = int (WINAPI*)();
@@ -26,8 +20,7 @@ namespace
 			probe_trace("missing copied payload");
 			TerminateProcess(GetCurrentProcess(), 1);
 		}
-		biz_initialize(params->version, params->envFlag, params->envIndex,
-			params->rootPath, params->rootPathCount);
+		biz_initialize(params);
 		probe_trace("initialized");
 		std::free(params);
 		if (const LONG error = DetourTransactionBegin(); error != NO_ERROR)
@@ -57,40 +50,10 @@ namespace
 		return originalProcessEntry();
 	}
 }
-#endif
 
-#ifdef REFLECTIVE_INJECT
-extern "C" __declspec(dllexport) unsigned long __stdcall initialize(void* lpThreadParameter)
-{
-	if (!lpThreadParameter)
-	{
-		TerminateProcess(GetCurrentProcess(), 1);
-	}
-
-	const ReflectiveInjectParams& injectParams = *static_cast<ReflectiveInjectParams*>(lpThreadParameter);
-	const EssentialData& essentialData = injectParams.essentialData;
-	const char* pThisModuleAddress = reinterpret_cast<const char*>(injectParams.injectionInfo.dllAddress);
-	const pe::MemoryModule thisModule{pe::Parser<pe::parser_flag::HasSectionAligned>{pThisModuleAddress}};
-
-	pe::fill_os_version(essentialData.version);
-	pe::fill_all_symbols(essentialData.symRva32, essentialData.symRva64);
-
-	pe::set_section_protection(thisModule);
-	pe::enable_exceptions(thisModule);
-	if (!pe::init_static_tls(thisModule))
-	{
-		TerminateProcess(GetCurrentProcess(), 1);
-	}
-	pe::wipe_header_memory(thisModule);
-
-	biz_initialize(injectParams.envFlag, injectParams.envIndex, injectParams.rootPath, injectParams.rootPathCount);
-	return 0;
-}
-#endif
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID /*lpReserved*/)
 {
-#ifndef REFLECTIVE_INJECT
 	if (DetourIsHelperProcess())
 	{
 		return TRUE;
@@ -102,13 +65,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID /*lpRese
 		probe_trace("dll attached");
 		DWORD payloadSize = 0;
 		void* payload = DetourFindPayloadEx(DETOUR_INJECT_PARAMS_GUID, &payloadSize);
-		if (!payload || payloadSize < sizeof(DetourInjectParams))
+		if (!payload || payloadSize < FIELD_OFFSET(DetourInjectParams, rootPath))
 		{
 			probe_trace("missing detours payload", payloadSize);
 			TerminateProcess(GetCurrentProcess(), 1);
 		}
 		const DetourInjectParams& injectParams = *static_cast<DetourInjectParams*>(payload);
-		if (injectParams.rootPathCount > (payloadSize - sizeof(DetourInjectParams)) / sizeof(wchar_t))
+		const DWORD tailBytes = payloadSize - FIELD_OFFSET(DetourInjectParams, rootPath);
+		if (injectParams.rootPathCount > tailBytes / sizeof(wchar_t)
+			|| injectParams.launchConfigBytes != tailBytes - injectParams.rootPathCount * sizeof(wchar_t))
 		{
 			probe_trace("invalid payload length", injectParams.rootPathCount);
 			TerminateProcess(GetCurrentProcess(), 1);
@@ -152,6 +117,5 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID /*lpRese
 		}
 		probe_trace("entry detour attached");
 	}
-#endif
 	return TRUE;
 }

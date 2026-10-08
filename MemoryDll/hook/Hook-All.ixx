@@ -11,37 +11,31 @@ import :User32;
 import :Ole32;
 import :Iphlpapi;
 import :Netapi32;
+import GlobalData;
 
 namespace hook
 {
+	// The hook set is a pure function of the launch plan the host injected (DeviceLaunch.hpp):
+	// isolation hooks give plain multi-instance behaviour, every device capability is opt-in.
 	export void hook_all()
 	{
-		wchar_t scope[16]{};
-		const DWORD scopeLength = GetEnvironmentVariableW(L"WORKSPACE_HOOK_SCOPE", scope, static_cast<DWORD>(std::size(scope)));
-		const bool deviceScope = scopeLength == 6 && std::wstring_view{scope, scopeLength} == L"device";
-		const bool minimalDeviceScope = scopeLength == 14 && std::wstring_view{scope, scopeLength} == L"device-minimal";
-		const bool asyncDeviceScope = scopeLength == 12 && std::wstring_view{scope, scopeLength} == L"device-async";
-		const bool processOnlyScope = scopeLength == 7 && std::wstring_view{scope, scopeLength} == L"process";
-		if (processOnlyScope)
-		{
-			hook_kernel32_process_only();
-			HookManager::instance().installAll();
-			return;
-		}
-		if (!deviceScope && !minimalDeviceScope && !asyncDeviceScope) hook_ntdll();
-		hook_kernel32(deviceScope || minimalDeviceScope || asyncDeviceScope,
-			!minimalDeviceScope,
-			!minimalDeviceScope && !asyncDeviceScope);
-		if (!deviceScope && !minimalDeviceScope && !asyncDeviceScope)
+		const auto& plan = global::Data::get().hookPlan();
+		if (plan.isolation) hook_ntdll();
+		hook_kernel32(plan.isolation, plan.storage, plan.storageAsync, plan.storageWait, plan.smbios);
+		if (plan.isolation)
 		{
 			hook_advapi32();
 			hook_shell32();
+			hook_user32();
 		}
-		if (!deviceScope && !minimalDeviceScope && !asyncDeviceScope) hook_user32();
-		hook_ole32();
-		hook_iphlpapi();
-		hook_netapi32();
-		
+		if (plan.os) hook_registry_identity();
+		if (plan.wmi) hook_ole32();
+		if (plan.network)
+		{
+			hook_iphlpapi();
+			hook_netapi32();
+		}
+
 		HookManager::instance().installAll();
 	}
 }

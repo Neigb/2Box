@@ -26,7 +26,7 @@ namespace hook
 		if (ObjectAttributes && ObjectAttributes->ObjectName && ObjectAttributes->ObjectName->Buffer && ObjectAttributes->ObjectName->Length)
 		{
 			const PUNICODE_STRING pOldName = ObjectAttributes->ObjectName;
-			std::wstring strNewName = std::format(L"{}{}", std::wstring_view{pOldName->Buffer, pOldName->Length / sizeof(wchar_t)}, global::Data::get().envFlagName());
+			std::wstring strNewName = std::format(L"{}{}", std::wstring_view{pOldName->Buffer, pOldName->Length / sizeof(wchar_t)}, global::Data::get().objectNamespaceName());
 			UNICODE_STRING newObjName;
 			newObjName.Buffer = strNewName.data();
 			newObjName.Length = newObjName.MaximumLength = static_cast<USHORT>(strNewName.length() * sizeof(wchar_t));
@@ -257,7 +257,7 @@ namespace hook
 		if (filePath.starts_with(L"\\??\\pipe\\"))
 		{
 			/* \??\pipe\ */
-			std::wstring strNewName = std::format(L"{}{}", filePath, global::Data::get().envFlagName());
+			std::wstring strNewName = std::format(L"{}{}", filePath, global::Data::get().objectNamespaceName());
 			const PUNICODE_STRING pOldName = ObjectAttributes->ObjectName;
 			UNICODE_STRING newObjName;
 			newObjName.Buffer = strNewName.data();

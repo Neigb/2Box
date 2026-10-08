@@ -49,6 +49,7 @@ namespace biz
 		std::uint64_t flag;
 		std::wstring_view flagName;
 		std::wstring_view name;
+		std::uint64_t deviceProfileId{0}; // 0: no device profile bound
 	};
 
 	using EnvInitializeNotify = std::function<void(const EnvInitializeData&)>;
@@ -56,4 +57,6 @@ namespace biz
 	export void initialize_env_reg(const EnvInitializeNotify& notify);
 	export void add_env_to_reg(std::wstring_view flagName, const Env* env);
 	export void delete_env_from_reg(std::wstring_view flagName);
+	// Bind (or with 0, unbind) a device profile to an environment. The profile itself lives in a file; see DeviceProfile.hpp.
+	export void set_env_device_profile(std::wstring_view flagName, std::uint64_t profileId);
 }

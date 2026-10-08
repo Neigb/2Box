@@ -12,7 +12,7 @@ namespace hook
 	{
 		namespace fs = std::filesystem;
 		return RegCreateKeyExW(global::Data::get().appKey(),
-		                       std::format(L"{}_{}", fs::path{lpFile}.stem().native(), global::Data::get().envFlagName()).c_str(),
+		                       std::format(L"{}_{}", fs::path{lpFile}.stem().native(), global::Data::get().registrySuffixName()).c_str(),
 		                       Reserved, nullptr, dwOptions, samDesired, nullptr, phkResult, nullptr);
 	}
 
@@ -296,6 +296,74 @@ namespace hook
 			}
 		}
 		return bRet;
+	}
+
+	// MachineGuid has no stable registry path across views (native / Wow6432Node), so it is recognised by value
+	// name plus GUID shape rather than by key. A different key that also holds a GUID named "MachineGuid" is
+	// rewritten too; this only happens inside a process that was started with the `os` capability.
+	bool is_machine_guid_name(const wchar_t* name)
+	{
+		static constexpr std::wstring_view expected = L"MachineGuid";
+		if (!name) return false;
+		for (std::size_t i = 0; i < expected.size(); ++i)
+		{
+			if (std::towlower(name[i]) != std::towlower(expected[i])) return false;
+		}
+		return name[expected.size()] == L'\0';
+	}
+
+	void rewrite_machine_guid_value(const wchar_t* name, DWORD type, void* data, DWORD bytes)
+	{
+		if (!data || type != REG_SZ || !is_machine_guid_name(name)) return;
+		const DWORD chars = bytes / sizeof(wchar_t);
+		if (chars < 36 || chars > 39) return; // 36 characters, optional braces and terminator
+		auto* text = static_cast<wchar_t*>(data);
+		std::string ascii;
+		for (DWORD i = 0; i < chars && text[i] != L'\0'; ++i)
+		{
+			if (text[i] > 127) return;
+			ascii.push_back(static_cast<char>(text[i]));
+		}
+		const std::string replaced = global::Data::get().virtualMachineGuid(ascii);
+		if (replaced.size() != ascii.size() || replaced == ascii) return;
+		for (std::size_t i = 0; i < replaced.size(); ++i) text[i] = static_cast<wchar_t>(replaced[i]);
+	}
+
+	template <auto Trampoline>
+	LSTATUS WINAPI RegQueryValueExW(HKEY key, LPCWSTR valueName, LPDWORD reserved, LPDWORD type, LPBYTE data, LPDWORD size)
+	{
+		DWORD localType = 0;
+		const LSTATUS status = Trampoline(key, valueName, reserved, type ? type : &localType, data, size);
+		if (status == ERROR_SUCCESS && data && size)
+		{
+			rewrite_machine_guid_value(valueName, type ? *type : localType, data, *size);
+		}
+		return status;
+	}
+
+	template <auto Trampoline>
+	LSTATUS WINAPI RegGetValueW(HKEY key, LPCWSTR subKey, LPCWSTR valueName, DWORD flags, LPDWORD type, PVOID data, LPDWORD size)
+	{
+		DWORD localType = 0;
+		const LSTATUS status = Trampoline(key, subKey, valueName, flags, type ? type : &localType, data, size);
+		if (status == ERROR_SUCCESS && data && size)
+		{
+			rewrite_machine_guid_value(valueName, type ? *type : localType, data, *size);
+		}
+		return status;
+	}
+
+	// Registry identity (capability `os`). Independent of isolation, so it is installed on its own.
+	void hook_registry_identity()
+	{
+		create_hook_by_func_ptr<&::RegQueryValueExW>().setHookFromGetter([&](auto trampolineConst)
+		{
+			return HookInfo{&RegQueryValueExW<trampolineConst.value>};
+		});
+		create_hook_by_func_ptr<&::RegGetValueW>().setHookFromGetter([&](auto trampolineConst)
+		{
+			return HookInfo{&RegGetValueW<trampolineConst.value>};
+		});
 	}
 
 	void hook_advapi32()

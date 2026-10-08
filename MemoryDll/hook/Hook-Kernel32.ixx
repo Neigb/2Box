@@ -15,7 +15,7 @@ namespace hook
 	{
 		if (lpNamedPipeName)
 		{
-			if (const BOOL bRet = Trampoline(std::format("{}{}", lpNamedPipeName, global::Data::get().envFlagNameA()).c_str(), nTimeOut))
+			if (const BOOL bRet = Trampoline(std::format("{}{}", lpNamedPipeName, global::Data::get().objectNamespaceNameA()).c_str(), nTimeOut))
 			{
 				return bRet;
 			}
@@ -28,7 +28,7 @@ namespace hook
 	{
 		if (lpNamedPipeName)
 		{
-			if (const BOOL bRet = Trampoline(std::format(L"{}{}", lpNamedPipeName, global::Data::get().envFlagName()).c_str(), nTimeOut))
+			if (const BOOL bRet = Trampoline(std::format(L"{}{}", lpNamedPipeName, global::Data::get().objectNamespaceName()).c_str(), nTimeOut))
 			{
 				return bRet;
 			}
@@ -41,7 +41,7 @@ namespace hook
 	{
 		if (Name)
 		{
-			return Trampoline(std::format("{}{}", Name, global::Data::get().envFlagNameA()).c_str(), Flags);
+			return Trampoline(std::format("{}{}", Name, global::Data::get().objectNamespaceNameA()).c_str(), Flags);
 		}
 		return Trampoline(Name, Flags);
 	}
@@ -51,7 +51,7 @@ namespace hook
 	{
 		if (Name)
 		{
-			return Trampoline(std::format(L"{}{}", Name, global::Data::get().envFlagName()).c_str(), Flags);
+			return Trampoline(std::format(L"{}{}", Name, global::Data::get().objectNamespaceName()).c_str(), Flags);
 		}
 		return Trampoline(Name, Flags);
 	}
@@ -71,16 +71,21 @@ namespace hook
 			return FALSE;
 		}
 		const std::wstring_view rootPath = global::Data::get().rootPath();
+		// The child gets exactly the launch configuration this process was given (same hook plan, same device profile).
+		const std::string_view launchConfig = global::Data::get().launchConfigText();
 		const std::uint32_t rootPathCount = static_cast<std::uint32_t>(rootPath.length());
 		const std::uint32_t rootPathSize = rootPathCount * sizeof(wchar_t);
-		const std::uint32_t paramsSize = sizeof(DetourInjectParams) + rootPathSize;
+		const std::uint32_t launchConfigSize = static_cast<std::uint32_t>(launchConfig.size());
+		const std::uint32_t paramsSize = FIELD_OFFSET(DetourInjectParams, rootPath) + rootPathSize + launchConfigSize;
 		std::vector<std::byte> buffer(paramsSize);
 		DetourInjectParams* injectParams = reinterpret_cast<DetourInjectParams*>(buffer.data());
 		injectParams->version = global::Data::get().sysVersion();
 		injectParams->envFlag = global::Data::get().envFlag();
 		injectParams->envIndex = global::Data::get().envIndex();
 		injectParams->rootPathCount = rootPathCount;
+		injectParams->launchConfigBytes = launchConfigSize;
 		memcpy(injectParams->rootPath, rootPath.data(), rootPathSize);
+		memcpy(reinterpret_cast<std::byte*>(injectParams->rootPath) + rootPathSize, launchConfig.data(), launchConfigSize);
 		if (!DetourCopyPayloadToProcess(lpProcessInformation->hProcess, DETOUR_INJECT_PARAMS_GUID, injectParams, paramsSize))
 		{
 			return FALSE;
@@ -413,9 +418,16 @@ namespace hook
 
 	std::mutex pendingDeviceMutex;
 	std::unordered_map<LPOVERLAPPED, PendingDeviceQuery> pendingDeviceQueries;
+	constexpr ULONG_PTR deviceQueryPendingStatus = 0x103;
+	// Mirrors pendingDeviceQueries.size(). Hot paths (waits, CloseHandle, completion APIs) read it
+	// first so they never touch the mutex/map while nothing is pending, including during process
+	// teardown after this module's statics are destroyed.
+	std::atomic<std::size_t> pendingDeviceCount{0};
+	bool has_pending_device_queries() { return pendingDeviceCount.load(std::memory_order_acquire) != 0; }
 
 	void finish_device_query(LPOVERLAPPED overlapped, bool succeeded, DWORD transferred)
 	{
+		if (!has_pending_device_queries()) return;
 		PendingDeviceQuery query{};
 		{
 			std::lock_guard lock(pendingDeviceMutex);
@@ -423,12 +435,14 @@ namespace hook
 			if (it == pendingDeviceQueries.end()) return;
 			query = it->second;
 			pendingDeviceQueries.erase(it);
+			pendingDeviceCount.store(pendingDeviceQueries.size(), std::memory_order_release);
 		}
 		if (succeeded) rewrite_device_query(query.kind, query.output, query.capacity, transferred);
 	}
 
 	void finish_signaled_device_queries(HANDLE signaled)
 	{
+		if (!has_pending_device_queries()) return;
 		std::vector<std::pair<PendingDeviceQuery, std::pair<bool, DWORD>>> completed;
 		{
 			std::lock_guard lock(pendingDeviceMutex);
@@ -436,7 +450,7 @@ namespace hook
 			{
 				const PendingDeviceQuery& query = it->second;
 				const LPOVERLAPPED overlapped = it->first;
-				if ((query.event == signaled || query.device == signaled) && overlapped->Internal != 0x103)
+				if ((query.event == signaled || query.device == signaled) && overlapped->Internal != deviceQueryPendingStatus)
 				{
 					completed.emplace_back(query, std::pair{overlapped->Internal == 0,
 						static_cast<DWORD>(std::min<ULONG_PTR>(overlapped->InternalHigh, std::numeric_limits<DWORD>::max()))});
@@ -444,6 +458,7 @@ namespace hook
 				}
 				else ++it;
 			}
+			pendingDeviceCount.store(pendingDeviceQueries.size(), std::memory_order_release);
 		}
 		for (const auto& [query, result] : completed)
 		{
@@ -451,130 +466,6 @@ namespace hook
 		}
 	}
 
-
-	template <auto Trampoline>
-	std::optional<BOOL> Proc_SMART_RCV_DRIVE_DATA(HANDLE hDevice, DWORD dwIoControlCode,
-	                                              LPVOID lpInBuffer, DWORD nInBufferSize,
-	                                              LPVOID lpOutBuffer, DWORD nOutBufferSize,
-	                                              LPDWORD lpBytesReturned, LPOVERLAPPED lpOverlapped)
-	{
-		if (nInBufferSize < sizeof(SENDCMDINPARAMS) - 1)
-		{
-			return std::nullopt;
-		}
-		SENDCMDINPARAMS* pIn = static_cast<SENDCMDINPARAMS*>(lpInBuffer);
-		if (IDE_ATAPI_IDENTIFY != pIn->irDriveRegs.bCommandReg && IDE_ATA_IDENTIFY != pIn->irDriveRegs.bCommandReg)
-		{
-			return std::nullopt;
-		}
-		if (nOutBufferSize < sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
-		{
-			return std::nullopt;
-		}
-		BOOL bRet = Trampoline(hDevice, dwIoControlCode,
-		                       lpInBuffer, nInBufferSize,
-		                       lpOutBuffer, nOutBufferSize,
-		                       lpBytesReturned, nullptr);
-		const DWORD originalError = GetLastError();
-		if (!bRet)
-		{
-			return bRet;
-		}
-		if (lpBytesReturned && *lpBytesReturned < sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
-		{
-			return bRet;
-		}
-		MYOUT* pOut = reinterpret_cast<MYOUT*>(static_cast<SENDCMDOUTPARAMS*>(lpOutBuffer)->bBuffer);
-		rewrite_ata_serial(pOut->struMy.sSerialNumber);
-		SetLastError(originalError);
-		return bRet;
-	}
-
-	template <auto Trampoline>
-	std::optional<BOOL> Proc_IOCTL_SCSI_MINIPORT(HANDLE hDevice, DWORD dwIoControlCode,
-	                                             LPVOID lpInBuffer, DWORD nInBufferSize,
-	                                             LPVOID lpOutBuffer, DWORD nOutBufferSize,
-	                                             LPDWORD lpBytesReturned, LPOVERLAPPED lpOverlapped)
-	{
-		if (nInBufferSize < sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDINPARAMS) - 1)
-		{
-			return std::nullopt;
-		}
-		SRB_IO_CONTROL* p = static_cast<SRB_IO_CONTROL*>(lpInBuffer);
-		SENDCMDINPARAMS* pin = reinterpret_cast<SENDCMDINPARAMS*>(static_cast<char*>(lpInBuffer) + sizeof(SRB_IO_CONTROL));
-		if (sizeof(SRB_IO_CONTROL) != p->HeaderLength
-			|| IOCTL_SCSI_MINIPORT_IDENTIFY != p->ControlCode
-			|| std::string_view{reinterpret_cast<char*>(p->Signature), sizeof(p->Signature)} != std::string_view{"SCSIDISK"}
-			|| (IDE_ATA_IDENTIFY != pin->irDriveRegs.bCommandReg
-				&& IDE_ATAPI_IDENTIFY != pin->irDriveRegs.bCommandReg))
-		{
-			return std::nullopt;
-		}
-		if (nOutBufferSize < sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
-		{
-			return std::nullopt;
-		}
-		BOOL bRet = Trampoline(hDevice, dwIoControlCode,
-		                       lpInBuffer, nInBufferSize,
-		                       lpOutBuffer, nOutBufferSize,
-		                       lpBytesReturned, nullptr);
-		const DWORD originalError = GetLastError();
-		if (!bRet)
-		{
-			return bRet;
-		}
-		if (lpBytesReturned && *lpBytesReturned < sizeof(SRB_IO_CONTROL) + sizeof(SENDCMDOUTPARAMS) - 1 + sizeof(MYOUTSMALL))
-		{
-			return bRet;
-		}
-		SENDCMDOUTPARAMS* pOutParams = reinterpret_cast<SENDCMDOUTPARAMS*>(static_cast<char*>(lpOutBuffer) + sizeof(SRB_IO_CONTROL));
-		MYOUT* pOut = reinterpret_cast<MYOUT*>(pOutParams->bBuffer);
-		rewrite_ata_serial(pOut->struMy.sSerialNumber);
-		SetLastError(originalError);
-		return bRet;
-	}
-
-	template <auto Trampoline>
-	std::optional<BOOL> Proc_IOCTL_STORAGE_QUERY_PROPERTY(HANDLE hDevice, DWORD dwIoControlCode,
-	                                                      LPVOID lpInBuffer, DWORD nInBufferSize,
-	                                                      LPVOID lpOutBuffer, DWORD nOutBufferSize,
-	                                                      LPDWORD lpBytesReturned, LPOVERLAPPED lpOverlapped)
-	{
-		if (nInBufferSize < FIELD_OFFSET(STORAGE_PROPERTY_QUERY, AdditionalParameters))
-		{
-			return std::nullopt;
-		}
-		STORAGE_PROPERTY_QUERY* query = static_cast<STORAGE_PROPERTY_QUERY*>(lpInBuffer);
-		if (query->QueryType != PropertyStandardQuery)
-		{
-			return std::nullopt;
-		}
-		if (query->PropertyId != StorageDeviceProperty)
-		{
-			return std::nullopt;
-		}
-		if (nOutBufferSize < sizeof(STORAGE_DESCRIPTOR_HEADER))
-		{
-			return std::nullopt;
-		}
-		BOOL bRet = Trampoline(hDevice, dwIoControlCode,
-		                       lpInBuffer, nInBufferSize,
-		                       lpOutBuffer, nOutBufferSize,
-		                       lpBytesReturned, nullptr);
-		const DWORD originalError = GetLastError();
-		if (!bRet)
-		{
-			return bRet;
-		}
-		if (lpBytesReturned && *lpBytesReturned < sizeof(STORAGE_DESCRIPTOR_HEADER))
-		{
-			return bRet;
-		}
-		const DWORD returnedSize = lpBytesReturned ? std::min(*lpBytesReturned, nOutBufferSize) : nOutBufferSize;
-		rewrite_storage_serial(lpOutBuffer, returnedSize);
-		SetLastError(originalError);
-		return bRet;
-	}
 
 	template <auto Trampoline>
 	BOOL WINAPI DeviceIoControl(__in HANDLE hDevice, __in DWORD dwIoControlCode, __in_bcount_opt(nInBufferSize)
@@ -585,6 +476,23 @@ namespace hook
 		if (lpOverlapped)
 		{
 			const DeviceQueryKind kind = classify_device_query(dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize);
+			bool tracked = false;
+			// An OVERLAPPED reused for an unrelated request must not inherit a stale entry whose output buffer may be gone.
+			if (kind == DeviceQueryKind::None) finish_device_query(lpOverlapped, false, 0);
+			if (kind != DeviceQueryKind::None)
+			{
+				try
+				{
+					std::lock_guard lock(pendingDeviceMutex);
+					pendingDeviceQueries.insert_or_assign(lpOverlapped,
+						PendingDeviceQuery{hDevice,
+							reinterpret_cast<HANDLE>(reinterpret_cast<ULONG_PTR>(lpOverlapped->hEvent) & ~ULONG_PTR{1}),
+							lpOutBuffer, nOutBufferSize, kind});
+					pendingDeviceCount.store(pendingDeviceQueries.size(), std::memory_order_release);
+					tracked = true;
+				}
+				catch (...) {}
+			}
 			const BOOL result = Trampoline(hDevice, dwIoControlCode,
 			                  lpInBuffer, nInBufferSize,
 			                  lpOutBuffer, nOutBufferSize,
@@ -596,43 +504,42 @@ namespace hook
 				{
 					const DWORD transferred = lpBytesReturned ? *lpBytesReturned :
 						static_cast<DWORD>(std::min<ULONG_PTR>(lpOverlapped->InternalHigh, std::numeric_limits<DWORD>::max()));
-					rewrite_device_query(kind, lpOutBuffer, nOutBufferSize, transferred);
+					if (tracked) finish_device_query(lpOverlapped, true, transferred);
+					else rewrite_device_query(kind, lpOutBuffer, nOutBufferSize, transferred);
 				}
 				else if (error == ERROR_IO_PENDING)
 				{
-					const HANDLE event = reinterpret_cast<HANDLE>(reinterpret_cast<ULONG_PTR>(lpOverlapped->hEvent) & ~ULONG_PTR{1});
-					try
+					// A very fast operation may complete before DeviceIoControl returns.
+					// The completion notification can therefore race with this call.
+					if (tracked && lpOverlapped->Internal != deviceQueryPendingStatus)
 					{
-						std::lock_guard lock(pendingDeviceMutex);
-						pendingDeviceQueries.insert_or_assign(lpOverlapped, PendingDeviceQuery{hDevice, event, lpOutBuffer, nOutBufferSize, kind});
+						finish_device_query(lpOverlapped, lpOverlapped->Internal == 0,
+							static_cast<DWORD>(std::min<ULONG_PTR>(lpOverlapped->InternalHigh, std::numeric_limits<DWORD>::max())));
 					}
-					catch (...) {}
+				}
+				else if (tracked)
+				{
+					finish_device_query(lpOverlapped, false, 0);
 				}
 			}
 			SetLastError(error);
 			return result;
 		}
-		std::optional<BOOL> result = std::nullopt;
-
-		if (lpInBuffer && lpOutBuffer)
+		// Synchronous identification queries: let the call complete, then rewrite what it returned.
+		const DeviceQueryKind kind = classify_device_query(dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize);
+		if (kind != DeviceQueryKind::None)
 		{
-			if (SMART_RCV_DRIVE_DATA == dwIoControlCode)
+			const BOOL result = Trampoline(hDevice, dwIoControlCode,
+			                               lpInBuffer, nInBufferSize,
+			                               lpOutBuffer, nOutBufferSize,
+			                               lpBytesReturned, nullptr);
+			const DWORD error = GetLastError();
+			if (result)
 			{
-				result = Proc_SMART_RCV_DRIVE_DATA<Trampoline>(hDevice, dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize, lpBytesReturned, lpOverlapped);
+				rewrite_device_query(kind, lpOutBuffer, nOutBufferSize, lpBytesReturned ? *lpBytesReturned : nOutBufferSize);
 			}
-			else if (IOCTL_SCSI_MINIPORT == dwIoControlCode)
-			{
-				result = Proc_IOCTL_SCSI_MINIPORT<Trampoline>(hDevice, dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize, lpBytesReturned, lpOverlapped);
-			}
-			else if (IOCTL_STORAGE_QUERY_PROPERTY == dwIoControlCode)
-			{
-				result = Proc_IOCTL_STORAGE_QUERY_PROPERTY<Trampoline>(hDevice, dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize, lpBytesReturned, lpOverlapped);
-			}
-		}
-
-		if (result.has_value())
-		{
-			return result.value();
+			SetLastError(error);
+			return result;
 		}
 		return Trampoline(hDevice, dwIoControlCode,
 		                  lpInBuffer, nInBufferSize,
@@ -742,6 +649,7 @@ namespace hook
 	template <auto Trampoline>
 	BOOL WINAPI HookCloseHandle(HANDLE handle)
 	{
+		if (!has_pending_device_queries()) return Trampoline(handle);
 		const BOOL result = Trampoline(handle);
 		const DWORD error = GetLastError();
 		if (result)
@@ -751,30 +659,32 @@ namespace hook
 			{
 				return item.second.device == handle || item.second.event == handle;
 			});
+			pendingDeviceCount.store(pendingDeviceQueries.size(), std::memory_order_release);
 		}
 		SetLastError(error);
 		return result;
 	}
 
-	void hook_kernel32_process_only()
+	template <auto Trampoline>
+	UINT WINAPI GetSystemFirmwareTable(DWORD signature, DWORD tableId, PVOID buffer, DWORD bufferSize)
 	{
-		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();
-		sys_info::SysDllMapHelper kernel32Mapped = sys_info::get_kernel32_mapped();
-		void* kernel32MappedAddress = kernel32Mapped.memAddress();
-		create_hook_by_func_type<KERNEL32_LIB_NAME, utils::make_literal_name<"CreateProcessA">(),
-			decltype(CreateProcessA<nullptr>)>().setHookFromGetter([&](auto trampolineConst)
+		const UINT result = Trampoline(signature, tableId, buffer, bufferSize);
+		const DWORD error = GetLastError();
+		// 'RSMB': raw SMBIOS. Only rewrite bytes the system actually delivered (a size query returns the length without data).
+		if (signature == 0x52534D42 && buffer && result != 0 && result <= bufferSize)
 		{
-			return HookInfo{&CreateProcessA<trampolineConst.value>, kernel32MappedAddress};
-		});
-		pCreateProcessTrampolineW = std::addressof(create_hook_by_func_type<KERNEL32_LIB_NAME,
-			utils::make_literal_name<"CreateProcessW">(), decltype(CreateProcessW<nullptr>)>()
-			.setHookFromGetter([&](auto trampolineConst)
-			{
-				return HookInfo{&CreateProcessW<trampolineConst.value>, kernel32MappedAddress};
-			}).funcAddress);
+			global::Data::get().rewriteSmbiosTable(static_cast<std::uint8_t*>(buffer), result);
+		}
+		SetLastError(error);
+		return result;
 	}
 
-	void hook_kernel32(bool deviceScope = false, bool completionHooks = true, bool waitAndCloseHooks = true)
+	// Which Kernel32 hooks exist is decided entirely by the launch plan (see DeviceLaunch.hpp):
+	//   always       CreateProcess*/WinExec, so children receive the same launch configuration
+	//   isolation    named pipes, boundary descriptors, OpenProcess
+	//   storage      DeviceIoControl;  storageAsync: overlapped completion;  storageWait: wait-based completion (experimental)
+	//   smbios       GetSystemFirmwareTable
+	void hook_kernel32(bool isolation, bool storage, bool storageAsync, bool storageWait, bool smbios)
 	{
 		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();
 		sys_info::SysDllMapHelper kernel32Mapped = sys_info::get_kernel32_mapped();
@@ -792,7 +702,7 @@ namespace hook
 		return HookInfo{&name<trampolineConst.value>}; \
 	})
 
-		if (!deviceScope)
+		if (isolation)
 		{
 			CREATE_HOOK_BY_NAME(WaitNamedPipeA);
 			CREATE_HOOK_BY_NAME(WaitNamedPipeW);
@@ -802,26 +712,27 @@ namespace hook
 		CREATE_HOOK_BY_NAME(CreateProcessA);
 		pCreateProcessTrampolineW = std::addressof(CREATE_HOOK_BY_NAME(CreateProcessW).funcAddress);
 		CREATE_HOOK_BY_NAME(WinExec);
-		if (!deviceScope) CREATE_HOOK_BY_NAME(OpenProcess);
-		CREATE_HOOK_BY_NAME(DeviceIoControl);
-		if (completionHooks)
+		if (isolation) CREATE_HOOK_BY_NAME(OpenProcess);
+		if (storage) CREATE_HOOK_BY_NAME(DeviceIoControl);
+		if (storage && storageAsync)
 		{
 			CREATE_HOOK_BY_POINTER(GetOverlappedResult);
 			CREATE_HOOK_BY_POINTER(GetOverlappedResultEx);
 			CREATE_HOOK_BY_POINTER(GetQueuedCompletionStatus);
 			CREATE_HOOK_BY_POINTER(GetQueuedCompletionStatusEx);
-			if (waitAndCloseHooks)
-			{
-				CREATE_HOOK_BY_POINTER(WaitForSingleObject);
-				CREATE_HOOK_BY_POINTER(WaitForSingleObjectEx);
-				CREATE_HOOK_BY_POINTER(WaitForMultipleObjects);
-				CREATE_HOOK_BY_POINTER(WaitForMultipleObjectsEx);
-				create_hook_by_func_ptr<&::CloseHandle>().setHookFromGetter([&](auto trampolineConst)
-				{
-					return HookInfo{&HookCloseHandle<trampolineConst.value>};
-				});
-			}
 		}
+		if (storage && storageWait)
+		{
+			CREATE_HOOK_BY_POINTER(WaitForSingleObject);
+			CREATE_HOOK_BY_POINTER(WaitForSingleObjectEx);
+			CREATE_HOOK_BY_POINTER(WaitForMultipleObjects);
+			CREATE_HOOK_BY_POINTER(WaitForMultipleObjectsEx);
+			create_hook_by_func_ptr<&::CloseHandle>().setHookFromGetter([&](auto trampolineConst)
+			{
+				return HookInfo{&HookCloseHandle<trampolineConst.value>};
+			});
+		}
+		if (smbios) CREATE_HOOK_BY_POINTER(GetSystemFirmwareTable);
 
 #undef CREATE_HOOK_BY_POINTER
 #undef CREATE_HOOK_BY_NAME

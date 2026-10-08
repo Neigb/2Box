@@ -133,66 +133,20 @@ struct SystemVersionInfo
 	bool is32BitSystem;
 };
 
-struct NtdllSymbolRvaInfo
-{
-	ULONGLONG LdrpHandleTlsData;
-	ULONGLONG LdrpInvertedFunctionTable;
-	ULONGLONG RtlInsertInvertedFunctionTable;
-	ULONGLONG LdrpReleaseTlsEntry;
-};
-
-struct Kernel32DllInfo
-{
-	DWORD rvaLoadLibraryA;
-	DWORD rvaGetProcAddress;
-	DWORD rvaFlushInstructionCache;
-};
-
-struct EssentialData
-{
-	SystemVersionInfo version;
-
-	NtdllSymbolRvaInfo symRva32;
-	NtdllSymbolRvaInfo symRva64;
-
-	Kernel32DllInfo kernelInfo32;
-	Kernel32DllInfo kernelInfo64;
-};
-
-struct DllInjectionInfo
-{
-	ULONGLONG kernelDllAddress;
-	ULONGLONG dllAddress;
-	DWORD dllSize;
-	DWORD rvaRelocation;
-	DWORD rvaImportDir;
-	DWORD rvaEntryPoint;
-	ULONGLONG desiredImageBase;
-};
-
-#pragma warning(push)
-#pragma warning(disable: 4200)
-struct ReflectiveInjectParams
-{
-	EssentialData essentialData;
-	DllInjectionInfo injectionInfo;
-	ULONGLONG envFlag;
-	DWORD envIndex;
-	DWORD rootPathCount;
-	wchar_t rootPath[];
-};
-#pragma warning(pop)
-
 // {C01FA6E2-92EB-4418-8D1A-F6307540CC19}
 inline constexpr GUID DETOUR_INJECT_PARAMS_GUID = {0xc01fa6e2, 0x92eb, 0x4418, {0x8d, 0x1a, 0xf6, 0x30, 0x75, 0x40, 0xcc, 0x19}};
 #pragma warning(push)
 #pragma warning(disable: 4200)
+// Layout: header, then rootPathCount wchar_t of rootPath, then launchConfigBytes bytes of launch-config text
+// (device identity / hook plan, see common/device_identity/DeviceLaunch.hpp). Total size must be
+// FIELD_OFFSET(DetourInjectParams, rootPath) + rootPathCount * sizeof(wchar_t) + launchConfigBytes.
 struct DetourInjectParams
 {
 	SystemVersionInfo version;
 	ULONGLONG envFlag;
 	DWORD envIndex;
 	DWORD rootPathCount;
+	DWORD launchConfigBytes;
 	wchar_t rootPath[];
 };
 #pragma warning(pop)

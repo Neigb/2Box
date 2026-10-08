@@ -1,3 +1,5 @@
+module;
+#include "InstanceIdentity.hpp"
 module Env;
 
 import "sys_defs.h";
@@ -6,6 +8,7 @@ import "sys_defs.h";
 import "sys_defs.hpp";
 #endif
 
+import std;
 import MainApp;
 import EssentialData;
 
@@ -263,6 +266,17 @@ namespace biz
 		}
 	}
 
+	devid::InstanceIdentity Env::getInstanceIdentity() const
+	{
+		// One value per host run, shared by every environment; never persisted.
+		static const std::uint64_t sessionId = []
+		{
+			std::random_device device;
+			return (static_cast<std::uint64_t>(device()) << 32) ^ device();
+		}();
+		return devid::InstanceIdentity::fromLegacy(m_flag, m_index, sessionId);
+	}
+
 	std::string Env::ensureDllInDeviceAndReturnPath() const
 	{
 		namespace fs = std::filesystem;
@@ -272,21 +286,23 @@ namespace biz
 			fs::create_directories(binDir);
 		}
 
+		const std::string dllStem = getInstanceIdentity().dllStem();
+		const std::wstring dllStemW{dllStem.begin(), dllStem.end()};
 		std::string dllFullPath;
-		const fs::path path32{get_dll_full_path<ArchBit::Bit32>(binDir, m_flagName)};
+		const fs::path path32{get_dll_full_path<ArchBit::Bit32>(binDir, dllStemW)};
 		if (!fs::exists(path32))
 		{
-			const fs::path tempPath{get_dll_full_path<ArchBit::Bit32>(binDir, m_flagName, L"temp")};
+			const fs::path tempPath{get_dll_full_path<ArchBit::Bit32>(binDir, dllStemW, L"temp")};
 			const auto [address, size] = get_core_data().dll32;
 			std::ofstream tempFile{tempPath, std::ios::binary | std::ios::trunc};
 			tempFile.write(address, size);
 			tempFile.close();
 			fs::rename(tempPath, path32);
 		}
-		const fs::path path64{get_dll_full_path<ArchBit::Bit64>(binDir, m_flagName)};
+		const fs::path path64{get_dll_full_path<ArchBit::Bit64>(binDir, dllStemW)};
 		if (!fs::exists(path64))
 		{
-			const fs::path tempPath{get_dll_full_path<ArchBit::Bit64>(binDir, m_flagName, L"temp")};
+			const fs::path tempPath{get_dll_full_path<ArchBit::Bit64>(binDir, dllStemW, L"temp")};
 			const auto [address, size] = get_core_data().dll64;
 			std::ofstream tempFile{tempPath, std::ios::binary | std::ios::trunc};
 			tempFile.write(address, size);
@@ -313,16 +329,18 @@ namespace biz
 		{
 			return;
 		}
-		if (const fs::path path32{biz::get_dll_full_path<ArchBit::Bit32>(binDir, m_flagName)}; fs::exists(path32))
+		const std::string dllStem = getInstanceIdentity().dllStem();
+		const std::wstring dllStemW{dllStem.begin(), dllStem.end()};
+		if (const fs::path path32{biz::get_dll_full_path<ArchBit::Bit32>(binDir, dllStemW)}; fs::exists(path32))
 		{
-			const fs::path tempPath{biz::get_dll_full_path<ArchBit::Bit32>(binDir, m_flagName, L"temp_to_delete")};
+			const fs::path tempPath{biz::get_dll_full_path<ArchBit::Bit32>(binDir, dllStemW, L"temp_to_delete")};
 			fs::rename(path32, tempPath);
 			fs::remove(tempPath);
 		}
 
-		if (const fs::path path64{biz::get_dll_full_path<ArchBit::Bit64>(binDir, m_flagName)}; fs::exists(path64))
+		if (const fs::path path64{biz::get_dll_full_path<ArchBit::Bit64>(binDir, dllStemW)}; fs::exists(path64))
 		{
-			const fs::path tempPath{biz::get_dll_full_path<ArchBit::Bit64>(binDir, m_flagName, L"temp_to_delete")};
+			const fs::path tempPath{biz::get_dll_full_path<ArchBit::Bit64>(binDir, dllStemW, L"temp_to_delete")};
 			fs::rename(path64, tempPath);
 			fs::remove(tempPath);
 		}

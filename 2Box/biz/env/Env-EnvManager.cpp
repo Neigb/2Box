@@ -1,3 +1,5 @@
+module;
+#include "DeviceProfile.hpp"
 module Env;
 
 import "sys_defs.h";
@@ -67,11 +69,12 @@ namespace biz
 	{
 		initialize_env_reg([this](const EnvInitializeData& data)
 		{
-			loadEnvFrom(data.index, data.flag, data.flagName, data.name);
+			loadEnvFrom(data.index, data.flag, data.flagName, data.name, data.deviceProfileId);
 		});
 	}
 
-	void EnvManager::loadEnvFrom(std::uint32_t index, std::uint64_t flag, std::wstring_view flagName, std::wstring_view name)
+	void EnvManager::loadEnvFrom(std::uint32_t index, std::uint64_t flag, std::wstring_view flagName, std::wstring_view name,
+	                             std::uint64_t deviceProfileId)
 	{
 		if (index >= m_currentIndex.load(std::memory_order_relaxed))
 		{
@@ -80,7 +83,7 @@ namespace biz
 		namespace fs = std::filesystem;
 		const fs::path envPath{fs::weakly_canonical(fs::path{app().exeDir()} / fs::path{L"Env"} / fs::path{std::format(L"{}", index)})};
 		fs::create_directories(envPath);
-		addEnv(std::make_shared<Env>(index, flag, flagName, name));
+		addEnv(std::make_shared<Env>(index, flag, flagName, name, deviceProfileId));
 	}
 
 	std::shared_ptr<Env> EnvManager::createEnv()
@@ -133,6 +136,23 @@ namespace biz
 		removeEnv(env->getFlag());
 		delete_env_dir(env->getIndex(), env->getFlagName());
 		delete_env_from_reg(env->getFlagName());
+		// The environment owned its device profile; nothing else references it.
+		if (const std::uint64_t profileId = env->getDeviceProfileId(); profileId != 0)
+		{
+			devid::DeviceProfileStore{deviceProfileDirectory()}.remove(profileId);
+		}
+	}
+
+	std::filesystem::path EnvManager::deviceProfileDirectory() const
+	{
+		namespace fs = std::filesystem;
+		return fs::weakly_canonical(fs::path{app().exeDir()} / fs::path{L"Env\\data\\device-profiles"});
+	}
+
+	void EnvManager::bindDeviceProfile(const std::shared_ptr<Env>& env, std::uint64_t profileId)
+	{
+		set_env_device_profile(env->getFlagName(), profileId);
+		env->setDeviceProfileId(profileId);
 	}
 
 	bool EnvManager::containsProcessIdExclude(std::uint32_t pid, std::uint64_t excludeEnvFlag) const

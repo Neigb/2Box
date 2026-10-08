@@ -14,12 +14,14 @@ namespace
 	constexpr wchar_t INDEX_PROP_NAME[] = L"Index";
 	constexpr wchar_t FLAG_PROP_NAME[] = L"Flag";
 	constexpr wchar_t NAME_PROP_NAME[] = L"Name";
+	constexpr wchar_t DEVICE_PROFILE_PROP_NAME[] = L"DeviceProfile";
 
 	struct EnvProperty
 	{
 		std::uint32_t index{0};
 		std::uint64_t flag{0};
 		std::wstring name;
+		std::uint64_t deviceProfileId{0};
 	};
 
 	EnvProperty get_env_property(HKEY hRootEnvKey, std::wstring_view subKeyName)
@@ -51,6 +53,14 @@ namespace
 		if (status != ERROR_SUCCESS)
 		{
 			throw std::runtime_error(std::format("Failed to get name, status:{}", status));
+		}
+		// Optional: environments created before device profiles existed simply have no binding.
+		dwType = REG_QWORD;
+		dwSize = sizeof(result.deviceProfileId);
+		if (RegGetValueW(hRootEnvKey, subKeyName.data(), DEVICE_PROFILE_PROP_NAME, RRF_RT_REG_QWORD, &dwType,
+		                 &result.deviceProfileId, &dwSize) != ERROR_SUCCESS)
+		{
+			result.deviceProfileId = 0;
 		}
 		return result;
 	}
@@ -214,8 +224,8 @@ namespace biz
 			strSubKeyName.resize(subKeyNameLength);
 			try
 			{
-				auto [index, flag, name] = get_env_property(rootEnvKey, strSubKeyName);
-				notify(EnvInitializeData{index, flag, strSubKeyName, name});
+				auto [index, flag, name, deviceProfileId] = get_env_property(rootEnvKey, strSubKeyName);
+				notify(EnvInitializeData{index, flag, strSubKeyName, name, deviceProfileId});
 			}
 			catch (...)
 			{
@@ -285,5 +295,24 @@ namespace biz
 			}
 		};
 		RegDeleteTreeW(rootEnvKey, flagName.data());
+	}
+
+	void set_env_device_profile(std::wstring_view flagName, std::uint64_t profileId)
+	{
+		const RegKey& appKey = get_app_key();
+		const std::wstring subKey = std::format(L"{}\\{}", ENV_KEY_NAME, flagName);
+		HKEY hEnvKey{nullptr};
+		if (const LSTATUS status = RegOpenKeyExW(appKey, subKey.c_str(), 0, KEY_ALL_ACCESS, &hEnvKey); status != ERROR_SUCCESS)
+		{
+			throw std::runtime_error(std::format("RegOpenKeyExW failed, error code:{}", status));
+		}
+		const RegKey envKey{[&]() { return hEnvKey; }};
+		const LSTATUS status = profileId == 0
+			? RegDeleteValueW(envKey, DEVICE_PROFILE_PROP_NAME)
+			: RegSetValueExW(envKey, DEVICE_PROFILE_PROP_NAME, 0, REG_QWORD, reinterpret_cast<const BYTE*>(&profileId), sizeof(profileId));
+		if (status != ERROR_SUCCESS && !(profileId == 0 && status == ERROR_FILE_NOT_FOUND))
+		{
+			throw std::runtime_error(std::format("Failed to set device profile, status:{}", status));
+		}
 	}
 }

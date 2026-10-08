@@ -1,3 +1,4 @@
 #pragma once
 #include "sys_defs.h"
-void biz_initialize(SystemVersionInfo versionInfo, unsigned long long envFlag, unsigned long envIndex, const wchar_t* rootPath, DWORD rootPathCount);
+// `params` must already be validated: rootPathCount wchar_t and launchConfigBytes bytes follow rootPath.
+void biz_initialize(const DetourInjectParams* params);

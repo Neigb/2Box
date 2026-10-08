@@ -9,13 +9,18 @@ namespace biz
 	{
 	public:
 		EnvManager();
-		void loadEnvFrom(std::uint32_t index, std::uint64_t flag, std::wstring_view flagName, std::wstring_view name);
+		void loadEnvFrom(std::uint32_t index, std::uint64_t flag, std::wstring_view flagName, std::wstring_view name,
+		                 std::uint64_t deviceProfileId = 0);
 		std::shared_ptr<Env> createEnv();
 		std::shared_ptr<Env> findEnvByFlagNoExcept(std::uint64_t flag) const;
 		std::shared_ptr<Env> findEnvByFlag(std::uint64_t flag) const;
 		std::size_t getEnvCount() const;
 
 		void deleteEnv(std::shared_ptr<Env> env);
+
+		// Device profiles are owned by an environment (one profile per environment for now) and stored as files.
+		std::filesystem::path deviceProfileDirectory() const;
+		void bindDeviceProfile(const std::shared_ptr<Env>& env, std::uint64_t profileId);
 
 		bool containsProcessIdExclude(std::uint32_t pid, std::uint64_t excludeEnvFlag) const;
 		std::vector<DWORD> getAllProcessIdsExclude(std::uint64_t excludeEnvFlag) const;

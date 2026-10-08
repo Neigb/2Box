@@ -47,27 +47,9 @@
     <ClCompile Include="biz\essential_data\EssentialData.ixx" />
     <ClCompile Include="biz\file_redirect\FileRedirect.cpp" />
     <ClCompile Include="biz\file_redirect\FileRedirect.ixx" />
-    <ClCompile Include="biz\http\WinHttp.ixx">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="biz\injector\Injector.ixx">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="biz\launcher\Launcher.cpp" />
     <ClCompile Include="biz\launcher\Launcher.ixx" />
     <ClCompile Include="biz\rpc\RpcServer.cpp" />
-    <ClCompile Include="biz\symbols\SymbolLoader.ixx">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="biz\wnd_enumerator\WndEnumerator.cpp" />
     <ClCompile Include="biz\wnd_enumerator\WndEnumerator.ixx" />
     <ClCompile Include="ui\control\biz_ctrl\UI.EnvBoxCard.cpp" />
@@ -76,18 +58,6 @@
     <ClCompile Include="ui\control\biz_ctrl\UI.EnvBoxCardArea.ixx" />
     <ClCompile Include="ui\control\biz_ctrl\UI.FeaturesArea.cpp" />
     <ClCompile Include="ui\control\biz_ctrl\UI.FeaturesArea.ixx" />
-    <ClCompile Include="ui\control\biz_ctrl\UI.FileStatusCtrl.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="ui\control\biz_ctrl\UI.FileStatusCtrl.ixx">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="ui\control\biz_ctrl\UI.LeftSidebar.cpp" />
     <ClCompile Include="ui\control\biz_ctrl\UI.LeftSidebar.ixx" />
     <ClCompile Include="ui\control\biz_ctrl\UI.EnvDetail.cpp" />
@@ -98,29 +68,11 @@
     <ClCompile Include="ui\control\biz_ctrl\UI.StartAppDiv.ixx" />
     <ClCompile Include="ui\control\UI.Button.cpp" />
     <ClCompile Include="ui\control\UI.Button.ixx" />
-    <ClCompile Include="ui\control\UI.LoadingIndicator.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="ui\control\UI.LoadingIndicator.ixx">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="ui\control\UI.ScrollBar.cpp" />
     <ClCompile Include="ui\control\UI.ScrollBar.ixx" />
     <ClCompile Include="ui\core\UI.Core-CommonDlg.cpp" />
     <ClCompile Include="ui\core\UI.Core-WindowBase.cpp" />
     <ClCompile Include="ui\core\UI.Core.ixx" />
-    <ClCompile Include="ui\page\UI.Page-Download.ixx">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="ui\page\UI.Page-Home.ixx" />
     <ClCompile Include="ui\page\UI.Page.ixx" />
     <ClCompile Include="ui\UI.MainWindow.cpp" />
@@ -229,7 +181,7 @@
       <ScanSourceForModuleDependencies>
       </ScanSourceForModuleDependencies>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Async</ExceptionHandling>
     </ClCompile>
     <Link>
@@ -262,7 +214,7 @@
       </ScanSourceForModuleDependencies>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <DebugInformationFormat>None</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Async</ExceptionHandling>
     </ClCompile>
     <Link>
@@ -293,7 +245,7 @@
       <ScanSourceForModuleDependencies>
       </ScanSourceForModuleDependencies>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Async</ExceptionHandling>
     </ClCompile>
     <Link>
@@ -327,7 +279,7 @@
       </ScanSourceForModuleDependencies>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <DebugInformationFormat>None</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)common\header_units\;$(SolutionDir)common\device_identity\;$(SolutionDir)3rdparty\Detours\include;$(SolutionDir)idl\$(PlatformTarget)\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Async</ExceptionHandling>
     </ClCompile>
     <Link>

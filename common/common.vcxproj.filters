@@ -42,9 +42,6 @@
     <ClCompile Include="utility\Utility.LiteralName.ixx">
       <Filter>utility</Filter>
     </ClCompile>
-    <ClCompile Include="utility\Utility.Toolhelp.ixx">
-      <Filter>utility</Filter>
-    </ClCompile>
     <ClCompile Include="coroutine\Coroutine-LazyTask.ixx">
       <Filter>coroutine</Filter>
     </ClCompile>
@@ -96,22 +93,7 @@
     <ClCompile Include="pe_loader\PELoader.ixx">
       <Filter>pe_loader</Filter>
     </ClCompile>
-    <ClCompile Include="pe_loader\PELoader-Loader.ixx">
-      <Filter>pe_loader</Filter>
-    </ClCompile>
     <ClCompile Include="pe_loader\PELoader-Parser.ixx">
-      <Filter>pe_loader</Filter>
-    </ClCompile>
-    <ClCompile Include="pe_loader\PELoader-Exceptions.ixx">
-      <Filter>pe_loader</Filter>
-    </ClCompile>
-    <ClCompile Include="pe_loader\PELoader-StaticTLS.ixx">
-      <Filter>pe_loader</Filter>
-    </ClCompile>
-    <ClCompile Include="pe_loader\PELoader-Symbol.ixx">
-      <Filter>pe_loader</Filter>
-    </ClCompile>
-    <ClCompile Include="pe_loader\PELoader-SystemInfo.ixx">
       <Filter>pe_loader</Filter>
     </ClCompile>
   </ItemGroup>

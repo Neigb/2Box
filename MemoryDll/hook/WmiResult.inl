@@ -15,6 +15,7 @@ namespace hook
 	using WmiCreateEnumAsync = HRESULT (STDMETHODCALLTYPE*)(IWbemServices*, const BSTR,
 		long, IWbemContext*, IWbemObjectSink*);
 	using WmiSinkIndicate = HRESULT (STDMETHODCALLTYPE*)(IWbemObjectSink*, long, IWbemClassObject**);
+	using WmiClassFactoryCreateInstance = HRESULT (STDMETHODCALLTYPE*)(IClassFactory*, IUnknown*, REFIID, void**);
 	using WmiEnumNext = HRESULT (STDMETHODCALLTYPE*)(IEnumWbemClassObject*, long, ULONG,
 		IWbemClassObject**, ULONG*);
 	using WmiCallResultGet = HRESULT (STDMETHODCALLTYPE*)(IWbemCallResult*, long, IWbemClassObject**);
@@ -30,10 +31,13 @@ namespace hook
 	WmiGetObjectAsync originalWmiGetObjectAsync{};
 	WmiCreateEnumAsync originalWmiCreateEnumAsync{};
 	WmiSinkIndicate originalWmiSinkIndicate{};
+	WmiClassFactoryCreateInstance originalWmiClassFactoryCreateInstance{};
 	WmiEnumNext originalWmiEnumNext{};
 	WmiCallResultGet originalWmiCallResultGet{};
 	WmiGet originalWmiGet{};
 	WmiNext originalWmiNext{};
+
+	void watch_wmi_locator(IUnknown* unknown);
 
 	template <typename Function>
 	void watch_wmi_method(void* instance, std::size_t slot, Function& trampoline, Function replacement)
@@ -102,29 +106,49 @@ namespace hook
 			static_cast<unsigned>(bytes[4]), delimiter, static_cast<unsigned>(bytes[5]));
 	}
 
+	// Each data domain is rewritten here only when the launch plan simulates it, and with the same
+	// DeviceIdentityProvider functions the other APIs (DeviceIoControl, IP Helper, SMBIOS table) use,
+	// so one device reports one identity everywhere. Processor identifiers are deliberately not touched:
+	// CPUID cannot be hooked, so rewriting ProcessorId would make WMI contradict the CPU.
 	std::optional<std::wstring> wmi_virtual_value(std::wstring_view className, std::wstring_view property,
 		std::wstring_view source)
 	{
-		const bool disk = wmi_equal(className, L"Win32_DiskDrive") || wmi_equal(className, L"Win32_PhysicalMedia");
-		const bool platform = wmi_equal(className, L"Win32_BIOS") || wmi_equal(className, L"Win32_BaseBoard")
-			|| wmi_equal(className, L"Win32_ComputerSystemProduct") || wmi_equal(className, L"Win32_Processor");
-		const bool adapter = wmi_equal(className, L"Win32_NetworkAdapter")
-			|| wmi_equal(className, L"Win32_NetworkAdapterConfiguration");
+		const global::Data& data = global::Data::get();
+		const bool disk = data.storageSimulated()
+			&& (wmi_equal(className, L"Win32_DiskDrive") || wmi_equal(className, L"Win32_PhysicalMedia"));
+		const bool adapter = data.networkSimulated()
+			&& (wmi_equal(className, L"Win32_NetworkAdapter") || wmi_equal(className, L"Win32_NetworkAdapterConfiguration"));
+		const bool smbios = data.smbiosSimulated();
+		if (!disk && !adapter && !smbios) return std::nullopt;
 		if (adapter && wmi_equal(property, L"MACAddress")) return wmi_virtual_mac(source);
 		const auto ascii = wmi_ascii(source);
 		if (!ascii || ascii->empty()) return std::nullopt;
-		if ((wmi_equal(className, L"Win32_ComputerSystemProduct") && wmi_equal(property, L"UUID"))
-			|| (adapter && (wmi_equal(property, L"GUID") || wmi_equal(property, L"SettingID"))))
+		const auto widen = [](const std::string& text) { return std::wstring{text.begin(), text.end()}; };
+		if (smbios && wmi_equal(className, L"Win32_ComputerSystemProduct") && wmi_equal(property, L"UUID"))
 		{
-			const std::string value = global::Data::get().virtualGuid(*ascii);
+			const std::string value = data.virtualSystemUuid(*ascii);
 			if (value == *ascii) return std::nullopt;
-			return std::wstring{value.begin(), value.end()};
+			return widen(value);
 		}
-		if ((disk || platform) && (wmi_equal(property, L"SerialNumber")
-			|| wmi_equal(property, L"IdentifyingNumber") || wmi_equal(property, L"ProcessorId")))
+		if (adapter && (wmi_equal(property, L"GUID") || wmi_equal(property, L"SettingID")))
 		{
-			const std::string serial = global::Data::get().virtualDiskSerial(*ascii);
-			return std::wstring{serial.begin(), serial.end()};
+			const std::string value = data.virtualAdapterGuid(*ascii);
+			if (value == *ascii) return std::nullopt;
+			return widen(value);
+		}
+		if (disk && wmi_equal(property, L"SerialNumber"))
+		{
+			return widen(data.virtualDiskSerial(*ascii));
+		}
+		if (smbios)
+		{
+			if ((wmi_equal(className, L"Win32_BIOS") && wmi_equal(property, L"SerialNumber"))
+				|| (wmi_equal(className, L"Win32_ComputerSystemProduct") && wmi_equal(property, L"IdentifyingNumber")))
+				return widen(data.virtualSystemSerial(*ascii));
+			if (wmi_equal(className, L"Win32_BaseBoard") && wmi_equal(property, L"SerialNumber"))
+				return widen(data.virtualBoardSerial(*ascii));
+			if (wmi_equal(className, L"Win32_SystemEnclosure") && wmi_equal(property, L"SerialNumber"))
+				return widen(data.virtualChassisSerial(*ascii));
 		}
 		if ((disk || adapter) && wmi_equal(property, L"PNPDeviceID"))
 		{
@@ -132,7 +156,7 @@ namespace hook
 			if (slash == std::wstring_view::npos || slash + 1 == source.size()) return std::nullopt;
 			const auto suffix = wmi_ascii(source.substr(slash + 1));
 			if (!suffix) return std::nullopt;
-			const std::string virtualSuffix = global::Data::get().virtualDiskSerial(*suffix);
+			const std::string virtualSuffix = data.virtualPnpInstance(adapter, *suffix);
 			std::wstring result{source.substr(0, slash + 1)};
 			result.append(virtualSuffix.begin(), virtualSuffix.end());
 			return result;
@@ -210,6 +234,21 @@ namespace hook
 	void watch_wmi_sink(IWbemObjectSink* sink)
 	{
 		watch_wmi_method(sink, 3, originalWmiSinkIndicate, &wmi_sink_indicate);
+	}
+
+	HRESULT STDMETHODCALLTYPE wmi_class_factory_create_instance(IClassFactory* factory, IUnknown* outer,
+		REFIID iid, void** result)
+	{
+		const HRESULT status = originalWmiClassFactoryCreateInstance(factory, outer, iid, result);
+		const DWORD error = GetLastError();
+		if (SUCCEEDED(status) && result && *result) watch_wmi_locator(static_cast<IUnknown*>(*result));
+		SetLastError(error);
+		return status;
+	}
+
+	void watch_wmi_class_factory(IClassFactory* factory)
+	{
+		watch_wmi_method(factory, 3, originalWmiClassFactoryCreateInstance, &wmi_class_factory_create_instance);
 	}
 
 	HRESULT STDMETHODCALLTYPE wmi_enum_next(IEnumWbemClassObject* enumeration, long timeout, ULONG count,
@@ -339,6 +378,18 @@ namespace hook
 	}
 
 	template <auto Trampoline>
+	HRESULT STDAPICALLTYPE CoGetClassObject(REFCLSID clsid, DWORD context, COSERVERINFO* reserved,
+		REFIID iid, LPVOID* result)
+	{
+		const HRESULT status = Trampoline(clsid, context, reserved, iid, result);
+		const DWORD error = GetLastError();
+		if (SUCCEEDED(status) && result && *result && is_wmi_locator(clsid) && IsEqualIID(iid, IID_IClassFactory))
+			watch_wmi_class_factory(static_cast<IClassFactory*>(*result));
+		SetLastError(error);
+		return status;
+	}
+
+	template <auto Trampoline>
 	HRESULT STDAPICALLTYPE CoCreateInstance(REFCLSID clsid, LPUNKNOWN outer, DWORD context, REFIID iid, LPVOID* result)
 	{
 		const HRESULT status = Trampoline(clsid, outer, context, iid, result);
@@ -370,6 +421,10 @@ namespace hook
 		create_hook_by_func_ptr<&::CoCreateInstanceEx>().setHookFromGetter([](auto trampoline)
 		{
 			return HookInfo{&CoCreateInstanceEx<trampoline.value>};
+		});
+		create_hook_by_func_ptr<&::CoGetClassObject>().setHookFromGetter([](auto trampoline)
+		{
+			return HookInfo{&CoGetClassObject<trampoline.value>};
 		});
 	}
 }
