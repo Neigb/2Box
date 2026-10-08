@@ -27,7 +27,7 @@ namespace devid
 		kCapNetwork = 1u << 1,      // IP Helper + NetBIOS: MAC, adapter GUID
 		kCapSmbios = 1u << 2,       // GetSystemFirmwareTable('RSMB'): system UUID, system/board/chassis serials
 		kCapWmi = 1u << 3,          // transport: WMI results for the enabled domains
-		kCapStorageAsync = 1u << 4, // transport: overlapped completion (GetOverlappedResult / completion ports)
+		kCapStorageAsync = 1u << 4, // overlapped completion (GetOverlappedResult / completion ports); implied by `storage`
 		kCapStorageWait = 1u << 5,  // transport, experimental: wait-based completion (hooks WaitFor* / CloseHandle)
 		kCapOs = 1u << 6,           // registry reads of MachineGuid (heuristic: by value name and GUID shape)
 	};
@@ -53,11 +53,14 @@ namespace devid
 		bool deviceSimulationEnabled() const { return (capabilities & kDomainCaps) != 0; }
 	};
 
-	// Make a capability mask self-consistent: transports need the domain they transport.
+	// Make a capability mask self-consistent: transports need the domain they transport, and a simulated
+	// storage domain always covers overlapped I/O too (otherwise a synchronous query would be rewritten and the
+	// same query issued with an OVERLAPPED would not).
 	inline std::uint32_t normalize_capabilities(std::uint32_t caps)
 	{
 		caps &= kAllCaps;
 		if (caps & (kCapStorageAsync | kCapStorageWait)) caps |= kCapStorage;
+		if (caps & kCapStorage) caps |= kCapStorageAsync;
 		if ((caps & kDomainCaps) == 0) caps = kCapNone; // transports alone simulate nothing
 		return caps;
 	}

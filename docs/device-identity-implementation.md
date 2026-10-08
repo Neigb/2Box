@@ -84,6 +84,8 @@ tests/run-device-identity-tests.sh
 
 ## 已知限制与后续
 
+- 重叠 I/O：`storage` 自带 `GetOverlappedResult(Ex)`/完成端口路径。仅靠事件等待、从不调用这些 API 的应用，其结果不会被改写（需要 `storage-wait`，实验性）；待处理表有 256 项上限，超出即清空，避免无限增长。
+
 - **未覆盖的路径**（明确"未模拟"）：`NtQuerySystemInformation(SystemFirmwareTableInformation)`、直接 syscall、内核/驱动侧查询、CPUID、卷序列号、非 `os` 能力下的注册表 `MachineGuid`。`os` 能力只覆盖 `RegQueryValueExW`/`RegGetValueW`（W 版本），按值名 `MachineGuid` + GUID 形状识别，不校验键路径，A 版本与 `NtQueryValueKey` 直接调用未覆盖。
 - 磁盘/网卡/SMBIOS 序列号依赖宿主来源值；宿主换硬件这些值会变。系统 UUID 与 `MachineGuid` 与宿主无关。
 - UI 还没有"为某个应用启用设备模拟"的入口，目前通过策略文件。

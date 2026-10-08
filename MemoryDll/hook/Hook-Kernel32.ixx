@@ -419,6 +419,7 @@ namespace hook
 	std::mutex pendingDeviceMutex;
 	std::unordered_map<LPOVERLAPPED, PendingDeviceQuery> pendingDeviceQueries;
 	constexpr ULONG_PTR deviceQueryPendingStatus = 0x103;
+	constexpr std::size_t kMaxPendingDeviceQueries = 256;
 	// Mirrors pendingDeviceQueries.size(). Hot paths (waits, CloseHandle, completion APIs) read it
 	// first so they never touch the mutex/map while nothing is pending, including during process
 	// teardown after this module's statics are destroyed.
@@ -484,6 +485,9 @@ namespace hook
 				try
 				{
 					std::lock_guard lock(pendingDeviceMutex);
+					// Entries are normally reaped by the completion hooks. An application that only waits on an event never
+					// triggers them, so cap the table: real in-flight queries are few, anything beyond is stale.
+					if (pendingDeviceQueries.size() >= kMaxPendingDeviceQueries) pendingDeviceQueries.clear();
 					pendingDeviceQueries.insert_or_assign(lpOverlapped,
 						PendingDeviceQuery{hDevice,
 							reinterpret_cast<HANDLE>(reinterpret_cast<ULONG_PTR>(lpOverlapped->hEvent) & ~ULONG_PTR{1}),

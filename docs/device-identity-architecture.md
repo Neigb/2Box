@@ -218,12 +218,12 @@ capabilities = storage, storage-async, network, smbios, wmi
 
 | 能力 | 类型 | 覆盖的 API（同一数据域内一起生效） |
 |---|---|---|
-| `storage` | 数据域 | `DeviceIoControl`（SMART / SCSI miniport / `STORAGE_DEVICE_DESCRIPTOR`）、WMI `Win32_DiskDrive/PhysicalMedia` 序列号与 PNP 实例后缀 |
+| `storage` | 数据域 | `DeviceIoControl`（SMART / SCSI miniport / `STORAGE_DEVICE_DESCRIPTOR`，同步与重叠 I/O 完成路径）、WMI `Win32_DiskDrive/PhysicalMedia` 序列号与 PNP 实例后缀 |
 | `network` | 数据域 | IP Helper（`GetAdaptersInfo/Addresses`）、NetBIOS、WMI `Win32_NetworkAdapter(Configuration)` 的 MAC / GUID / PNP 后缀 |
 | `smbios` | 数据域 | `GetSystemFirmwareTable('RSMB')` 的系统 UUID 与系统/主板/机箱序列号、WMI `Win32_ComputerSystemProduct/BIOS/BaseBoard/SystemEnclosure` |
 | `os` | 数据域 | 注册表 `RegQueryValueExW`/`RegGetValueW` 读取 `MachineGuid`（按值名与 GUID 形状识别），返回画像里的 `os.machineGuid` |
 | `wmi` | 传输 | 对已启用的数据域启用 WMI 结果改写；单独写 `wmi` 不改写任何东西（`normalize_capabilities` 会把它丢掉） |
-| `storage-async` | 传输 | 重叠 I/O 完成路径：`GetOverlappedResult(Ex)`、`GetQueuedCompletionStatus(Ex)`；隐含 `storage` |
+| `storage-async` | （已并入 `storage`） | 重叠 I/O 完成路径：`GetOverlappedResult(Ex)`、`GetQueuedCompletionStatus(Ex)`；启用 `storage` 即自动包含，保留名字仅为兼容 |
 | `storage-wait` | 传输（实验） | 事件等待式完成：`WaitFor*`、`CloseHandle`；隐含 `storage`；不在任何默认组合内 |
 
 Hook 只由 `HookPlan` 决定，`HookPlan` 是 `LaunchConfig` 的纯函数：

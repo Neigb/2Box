@@ -389,7 +389,7 @@ TEST(simulation_is_enabled_per_application)
 		"[app]\nmatch = Target.EXE\ncapabilities = storage, network ; inline comment\n"
 		"[app]\nmatch = C:/Tools/Special.exe\ncapabilities = smbios, wmi\n");
 	CHECK(policy.errors.empty());
-	CHECK(policy.resolve("D:\\x\\target.exe") == (devid::kCapStorage | devid::kCapNetwork));
+	CHECK(policy.resolve("D:\\x\\target.exe") == (devid::kCapStorage | devid::kCapStorageAsync | devid::kCapNetwork));
 	CHECK(policy.resolve("c:\\tools\\special.exe") == (devid::kCapSmbios | devid::kCapWmi));
 	CHECK(policy.resolve("D:\\other\\special.exe") == devid::kCapNone); // full-path rule does not match by name
 	CHECK(policy.resolve("D:\\x\\unrelated.exe") == devid::kCapNone);
@@ -414,9 +414,9 @@ TEST(capabilities_normalise_and_drive_the_hook_plan)
 	CHECK(plan.network && plan.wmi && !plan.storage && !plan.smbios);
 	CHECK(plan.isolation);
 
-	config.capabilities = devid::kCapStorage; // no async/wait: completion hooks stay off
+	config.capabilities = devid::kCapStorage; // overlapped completion is part of storage; wait-based stays opt-in
 	plan = devid::make_hook_plan(config);
-	CHECK(plan.storage && !plan.storageAsync && !plan.storageWait && !plan.wmi);
+	CHECK(plan.storage && plan.storageAsync && !plan.storageWait && !plan.wmi);
 
 	config.hooks = devid::kHookProcessOnly;
 	plan = devid::make_hook_plan(config);
@@ -438,7 +438,7 @@ TEST(legacy_scopes_map_to_the_same_hook_sets_as_before)
 	const devid::HookPlan async = plan("device-async");
 	CHECK(!async.isolation && async.storage && async.storageAsync && !async.storageWait && async.network && async.wmi);
 	const devid::HookPlan minimal = plan("device-minimal");
-	CHECK(!minimal.isolation && minimal.storage && !minimal.storageAsync && !minimal.network && !minimal.wmi);
+	CHECK(!minimal.isolation && minimal.storage && minimal.storageAsync && !minimal.storageWait && !minimal.network && !minimal.wmi);
 	const devid::HookPlan process = plan("process");
 	CHECK(process.processPropagation && !process.isolation && !process.storage);
 }
@@ -455,7 +455,7 @@ TEST(launch_config_roundtrip_and_invariants)
 	CHECK(decoded.config.has_value());
 	CHECK(decoded.config && decoded.config->sessionId == config.sessionId);
 	CHECK(decoded.config && decoded.config->objectNamespaceId == config.objectNamespaceId);
-	CHECK(decoded.config && decoded.config->capabilities == config.capabilities);
+	CHECK(decoded.config && decoded.config->capabilities == devid::normalize_capabilities(config.capabilities));
 	CHECK(decoded.config && decoded.config->profile == config.profile);
 
 	// capabilities without a profile are a host bug and must be rejected, not guessed.
@@ -534,7 +534,7 @@ TEST(policy_paths_may_contain_comment_characters)
 {
 	const auto policy = devid::parse_policy("[app]\nmatch = C:\\Tools\\a#1;x\\app.exe  # note\ncapabilities = storage\n");
 	CHECK(policy.errors.empty());
-	CHECK(policy.resolve("c:\\tools\\a#1;x\\app.exe") == devid::kCapStorage);
+	CHECK(policy.resolve("c:\\tools\\a#1;x\\app.exe") == (devid::kCapStorage | devid::kCapStorageAsync));
 }
 
 TEST(alias_table_stays_bounded)
