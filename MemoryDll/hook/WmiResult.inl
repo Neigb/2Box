@@ -378,7 +378,7 @@ namespace hook
 	}
 
 	template <auto Trampoline>
-	HRESULT STDAPICALLTYPE CoGetClassObject(REFCLSID clsid, DWORD context, COSERVERINFO* reserved,
+	HRESULT STDAPICALLTYPE CoGetClassObject(REFCLSID clsid, DWORD context, LPVOID reserved,
 		REFIID iid, LPVOID* result)
 	{
 		const HRESULT status = Trampoline(clsid, context, reserved, iid, result);
