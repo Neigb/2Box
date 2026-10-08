@@ -353,7 +353,7 @@ namespace hook
 		return status;
 	}
 
-	// Registry identity (capability `os`). Independent of isolation, so it is installed on its own.
+	// Registry identity (capability `os`).
 	void hook_registry_identity()
 	{
 		create_hook_by_func_ptr<&::RegQueryValueExW>().setHookFromGetter([&](auto trampolineConst)

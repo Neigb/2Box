@@ -1,6 +1,6 @@
 # 设备隔离与启动流程待办
 
-> 设备身份已重构为按能力启用的 DeviceIdentityProvider，默认不再安装设备类 Hook，`WORKSPACE_HOOK_SCOPE` 由宿主映射。新的设计与状态见 `device-identity-architecture.md` 与 `device-identity-implementation.md`；下文的 Hook 范围描述为重构前的状态。
+> 设备身份已重构为按能力启用的 DeviceIdentityProvider，默认不再安装设备类 Hook，`WORKSPACE_HOOK_SCOPE` 已删除（改用策略文件）。新的设计与状态见 `device-identity-architecture.md` 与 `device-identity-implementation.md`；下文的 Hook 范围描述为重构前的状态。
 
 ## 已接入
 

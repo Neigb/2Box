@@ -22,7 +22,7 @@
 | `InstanceIdentity.hpp` | `InstanceId / InstanceIndex / SessionId / ObjectNamespaceId`；DLL 名、hive 名、注册表后缀、对象命名空间后缀各有独立访问器（数值沿用旧 `envFlag`，无需迁移） |
 | `DeviceProfile.hpp` | `Storage/Network/Os/HardwareProfile`、生成、带校验和的文本序列化、`DeviceProfileStore`（原子写）、`obtain_profile`（已绑定则必须能读到，读不到抛异常，绝不静默重新生成） |
 | `DeviceIdentityProvider.hpp` | 形状保留推导（磁盘/SMBIOS 序列号、PNP 后缀、网卡 GUID、MAC）、系统 UUID、SMBIOS 原始表原地改写（长度不变） |
-| `DeviceLaunch.hpp` | 能力位、`HookPlan`、按应用策略解析、旧 `WORKSPACE_HOOK_SCOPE` 映射、`LaunchConfig` 编解码 |
+| `DeviceLaunch.hpp` | 能力位、`HookPlan`、按应用策略解析、`LaunchConfig` 编解码 |
 
 **宿主（2Box.exe）**
 - `Launcher`：每次启动前 `resolve_launch_config`（策略文件或旧环境变量 → 能力集；需要模拟时 `obtain_profile`），然后把 `LaunchConfig` 编进注入 payload。解析失败会让启动失败。
@@ -41,7 +41,7 @@
 ## 行为变化（请确认）
 
 1. **默认不再安装设备类 Hook**。以前未设置 `WORKSPACE_HOOK_SCOPE` 时，`DeviceIoControl`、完成端口类、IP Helper、NetBIOS、整个 WMI/COM 钩子对每个受管进程都生效；现在默认是"普通多开"（只有隔离类 Hook + 进程创建传播）。
-2. `WORKSPACE_HOOK_SCOPE` 现在由宿主读取并映射成 `LaunchConfig`（CI 仍可使用）。映射保持原有 Hook 集合，另外 `device`/`device-async` 增加了 `smbios`，以保持 WMI 的 UUID/BIOS 序列号仍被改写。
+2. **`WORKSPACE_HOOK_SCOPE` 环境变量已删除**，连同"只装设备 Hook、不装隔离 Hook"的非隔离模式。隔离类 Hook 始终安装；启用设备模拟只能通过策略文件。CI 也已改为策略文件。
 3. 设备值的生成方式变了：序列号保持来源值的长度、字符类别、分隔符和厂商标签，不再是截断的 16 位十六进制；GUID 保持大小写和花括号；已有环境第一次启用设备模拟时会得到新的画像，数值与旧版本不同。
 
 ## 如何启用
@@ -80,6 +80,7 @@ tests/run-device-identity-tests.sh
 - 策略文件注释只在行首或空白之后开始，路径中可含 `#`、`;`。
 - 别名表设上限（4096 项，满后清空）。
 - 清理无用代码（这些文件在工程里本就是 `ExcludedFromBuild`，不影响构建结果）：反射式注入链（`Injector.ixx`、`LoadSelf.cpp`、`dllmain.cpp` 的 `REFLECTIVE_INJECT` 分支、`sys_defs.h` 中对应结构体、`pe_loader` 的 Loader/Exceptions/StaticTLS/Symbol/SystemInfo 分区、`Utility.Toolhelp`）和符号下载链（`SymbolLoader`、`WinHttp`、`UI.Page-Download`、`UI.FileStatusCtrl`、`UI.LoadingIndicator`），以及 `EssentialData.ixx` 里的注释掉的旧代码。
+- `storage` 自带重叠 I/O 完成路径（`storage-async` 仅为兼容别名），待处理表上限 256。
 - `Hook-Kernel32.ixx` 中三个重复的同步 `Proc_*` 函数合并为 `classify_device_query` + `rewrite_device_query`。
 
 ## 已知限制与后续

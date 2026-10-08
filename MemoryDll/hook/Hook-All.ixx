@@ -16,18 +16,15 @@ import GlobalData;
 namespace hook
 {
 	// The hook set is a pure function of the launch plan the host injected (DeviceLaunch.hpp):
-	// isolation hooks give plain multi-instance behaviour, every device capability is opt-in.
+	// isolation hooks give plain multi-instance behaviour and are always installed, every device capability is opt-in.
 	export void hook_all()
 	{
 		const auto& plan = global::Data::get().hookPlan();
-		if (plan.isolation) hook_ntdll();
-		hook_kernel32(plan.isolation, plan.storage, plan.storageAsync, plan.storageWait, plan.smbios);
-		if (plan.isolation)
-		{
-			hook_advapi32();
-			hook_shell32();
-			hook_user32();
-		}
+		hook_ntdll();
+		hook_kernel32(plan.storage, plan.storageAsync, plan.storageWait, plan.smbios);
+		hook_advapi32();
+		hook_shell32();
+		hook_user32();
 		if (plan.os) hook_registry_identity();
 		if (plan.wmi) hook_ole32();
 		if (plan.network)

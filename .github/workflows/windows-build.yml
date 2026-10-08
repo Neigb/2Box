@@ -117,7 +117,11 @@ jobs:
             $diagnostic = $diagnostic -replace '%','%25' -replace '\r','%0D' -replace '\n','%0A'
             Write-Output "::error title=Device probe assertion::$diagnostic"
           }
-          $env:WORKSPACE_HOOK_SCOPE = 'device-async'
+          # Device simulation is enabled per application through the policy file (no process environment variable).
+          $dataDirectory = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\Env\data'
+          $policy = Join-Path $dataDirectory 'device-policy.ini'
+          New-Item -ItemType Directory -Force -Path $dataDirectory | Out-Null
+          Set-Content -LiteralPath $policy -Value @('[app]', 'match = powershell.exe', 'capabilities = storage, network, smbios, os, wmi')
           & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $scopeSmoke -Output $scopeResult
           $deadline = (Get-Date).AddSeconds(45)
           while (!(Test-Path -LiteralPath $scopeResult) -and (Get-Date) -lt $deadline) {
@@ -128,21 +132,18 @@ jobs:
             throw 'Hook scope smoke did not finish'
           }
           $smoke = Get-Content -LiteralPath $scopeResult -Raw | ConvertFrom-Json
-          if ($smoke.Scope -ne 'device-async') { throw 'Hook scope was not inherited by managed PowerShell' }
           if (!$smoke.CompilerChildSucceeded) {
             Write-ScopeFailure ([string]$smoke.FatalError)
             Write-Host $smoke.FatalError
             throw 'Hook scope compiler child failed'
           }
           Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
-          Remove-Item Env:WORKSPACE_HOOK_SCOPE
           Start-Sleep -Seconds 1
           & $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $baseline -NativeAssembly $nativeAssembly
           if ($LASTEXITCODE -ne 0) {
             Write-ProbeFailure "Baseline probe failed: $LASTEXITCODE"
             throw "Baseline probe failed: $LASTEXITCODE"
           }
-          $env:WORKSPACE_HOOK_SCOPE = 'device-async'
           foreach ($output in @($managedA, $managedB)) {
             & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output -NativeAssembly $nativeAssembly
             $deadline = (Get-Date).AddSeconds(45)
@@ -167,9 +168,9 @@ jobs:
             }
           }
           Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
-          Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $policy -ErrorAction SilentlyContinue
           try {
-            & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB
+            & $check -Baseline $baseline -ManagedA $managedA -ManagedB $managedB -ExpectMachineGuid
           } catch {
             Write-ProbeFailure $_.Exception.ToString()
             throw
@@ -187,7 +188,6 @@ jobs:
           $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
           $managed = Join-Path $env:RUNNER_TEMP 'device-probe-default.json'
           $nativeAssembly = Join-Path $env:RUNNER_TEMP 'device-probe-native.dll'
-          Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
           Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 1
           & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $managed -NativeAssembly $nativeAssembly
@@ -196,38 +196,6 @@ jobs:
           Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
           if (!(Test-Path -LiteralPath $managed)) { throw 'Default-mode probe did not finish' }
           & $check -Baseline $baseline -ManagedDefault $managed
-
-      - name: Probe per-application device policy
-        if: matrix.configuration == 'Release' && matrix.platform == 'x64'
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          $probe = Join-Path $env:GITHUB_WORKSPACE 'tests\windows-device-probe.ps1'
-          $check = Join-Path $env:GITHUB_WORKSPACE 'tests\check-windows-device-probe.ps1'
-          $cli = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\WorkspaceCli.exe'
-          $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-          $baseline = Join-Path $env:RUNNER_TEMP 'device-probe-baseline.json'
-          $outputs = @((Join-Path $env:RUNNER_TEMP 'device-probe-policy-a.json'), (Join-Path $env:RUNNER_TEMP 'device-probe-policy-b.json'))
-          $nativeAssembly = Join-Path $env:RUNNER_TEMP 'device-probe-native.dll'
-          $dataDirectory = Join-Path $env:GITHUB_WORKSPACE 'bin\x64\Env\data'
-          $policy = Join-Path $dataDirectory 'device-policy.ini'
-          Remove-Item Env:WORKSPACE_HOOK_SCOPE -ErrorAction SilentlyContinue
-          Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
-          Start-Sleep -Seconds 1
-          New-Item -ItemType Directory -Force -Path $dataDirectory | Out-Null
-          Set-Content -LiteralPath $policy -Value @('[app]', 'match = powershell.exe', 'capabilities = storage, storage-async, network, smbios, os, wmi')
-          try {
-            foreach ($output in $outputs) {
-              & $cli $powershell -NoProfile -ExecutionPolicy Bypass -File $probe -Output $output -NativeAssembly $nativeAssembly
-              $deadline = (Get-Date).AddSeconds(45)
-              while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-              if (!(Test-Path -LiteralPath $output)) { throw "Policy probe did not finish: $output" }
-            }
-          } finally {
-            Remove-Item -LiteralPath $policy -ErrorAction SilentlyContinue
-            Get-Process WorkspaceHost -ErrorAction SilentlyContinue | Stop-Process -Force
-          }
-          & $check -Baseline $baseline -ManagedA $outputs[0] -ManagedB $outputs[1] -ExpectMachineGuid
 
       - name: Upload device probe results
         if: always() && matrix.configuration == 'Release' && matrix.platform == 'x64'

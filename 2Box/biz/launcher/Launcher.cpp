@@ -17,7 +17,7 @@ import Biz.Core;
 namespace
 {
 	// Decide, for this one launch, which hooks the target gets and whether a device profile is active.
-	// Default (no policy rule, no WORKSPACE_HOOK_SCOPE) is plain multi-instance isolation: no device
+	// Default (no policy rule) is plain multi-instance isolation: no device
 	// capability, no profile created, nothing device-related sent to the target.
 	devid::LaunchConfig resolve_launch_config(const std::shared_ptr<biz::Env>& env, std::wstring_view exePath)
 	{
@@ -27,37 +27,20 @@ namespace
 		config.sessionId = instance.sessionId;
 		config.objectNamespaceId = instance.objectNamespaceId;
 
-		// Diagnostic / CI override, mapped here so the injected DLL never reads environment variables.
-		wchar_t scope[16]{};
-		const DWORD scopeLength = GetEnvironmentVariableW(L"WORKSPACE_HOOK_SCOPE", scope, static_cast<DWORD>(std::size(scope)));
-		std::string scopeName;
-		if (scopeLength != 0 && scopeLength < std::size(scope))
-		{
-			for (DWORD i = 0; i < scopeLength; ++i) scopeName.push_back(scope[i] < 128 ? static_cast<char>(scope[i]) : '?');
-		}
-		const devid::ScopeMapping legacy = devid::map_legacy_scope(scopeName);
-
+		// Per-application policy, re-read on every launch. No policy file or no matching rule == plain multi-instance.
 		std::uint32_t capabilities = devid::kCapNone;
-		if (legacy.overrides)
+		const fs::path policyPath{fs::path{app().exeDir()} / fs::path{L"Env\\data\\device-policy.ini"}};
+		std::error_code ec;
+		if (fs::exists(policyPath, ec))
 		{
-			config.hooks = legacy.hooks;
-			capabilities = legacy.capabilities;
-		}
-		else
-		{
-			const fs::path policyPath{fs::path{app().exeDir()} / fs::path{L"Env\\data\\device-policy.ini"}};
-			std::error_code ec;
-			if (fs::exists(policyPath, ec))
+			std::ifstream file{policyPath, std::ios::binary};
+			const std::string text{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+			const devid::DevicePolicy policy = devid::parse_policy(text);
+			if (!policy.errors.empty())
 			{
-				std::ifstream file{policyPath, std::ios::binary};
-				const std::string text{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
-				const devid::DevicePolicy policy = devid::parse_policy(text);
-				if (!policy.errors.empty())
-				{
-					throw std::runtime_error(std::format("device-policy.ini: {}", policy.errors.front()));
-				}
-				capabilities = policy.resolve(devid::detail::path_to_utf8(fs::path{exePath}));
+				throw std::runtime_error(std::format("device-policy.ini: {}", policy.errors.front()));
 			}
+			capabilities = policy.resolve(devid::detail::path_to_utf8(fs::path{exePath}));
 		}
 		config.capabilities = devid::normalize_capabilities(capabilities);
 

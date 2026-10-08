@@ -358,8 +358,6 @@ TEST(default_launch_is_plain_isolation_without_device_simulation)
 	CHECK(!config.deviceSimulationEnabled());
 	CHECK(!config.profile.has_value());
 	const devid::HookPlan plan = devid::make_hook_plan(config);
-	CHECK(plan.isolation);
-	CHECK(plan.processPropagation);
 	CHECK(!plan.storage && !plan.storageAsync && !plan.storageWait);
 	CHECK(!plan.network && !plan.wmi && !plan.smbios);
 
@@ -368,7 +366,6 @@ TEST(default_launch_is_plain_isolation_without_device_simulation)
 	const auto decoded = devid::decode_launch_config(encoded);
 	CHECK(decoded.config.has_value());
 	CHECK(decoded.config && decoded.config->capabilities == devid::kCapNone);
-	CHECK(decoded.config && decoded.config->hooks == devid::kHookIsolation);
 }
 
 TEST(no_policy_or_unmatched_policy_means_no_capabilities)
@@ -377,9 +374,6 @@ TEST(no_policy_or_unmatched_policy_means_no_capabilities)
 	const auto policy = devid::parse_policy("[app]\nmatch = other.exe\ncapabilities = storage\n");
 	CHECK(policy.errors.empty());
 	CHECK(policy.resolve("C:\\Apps\\game.exe") == devid::kCapNone);
-	CHECK(!devid::map_legacy_scope("").overrides);
-	CHECK(!devid::map_legacy_scope("full").overrides);
-	CHECK(!devid::map_legacy_scope("garbage").overrides);
 }
 
 TEST(simulation_is_enabled_per_application)
@@ -412,35 +406,10 @@ TEST(capabilities_normalise_and_drive_the_hook_plan)
 	config.capabilities = devid::kCapWmi | devid::kCapNetwork;
 	devid::HookPlan plan = devid::make_hook_plan(config);
 	CHECK(plan.network && plan.wmi && !plan.storage && !plan.smbios);
-	CHECK(plan.isolation);
 
 	config.capabilities = devid::kCapStorage; // overlapped completion is part of storage; wait-based stays opt-in
 	plan = devid::make_hook_plan(config);
 	CHECK(plan.storage && plan.storageAsync && !plan.storageWait && !plan.wmi);
-
-	config.hooks = devid::kHookProcessOnly;
-	plan = devid::make_hook_plan(config);
-	CHECK(plan.processPropagation && !plan.isolation && !plan.storage && !plan.network);
-}
-
-TEST(legacy_scopes_map_to_the_same_hook_sets_as_before)
-{
-	const auto plan = [](const char* scope)
-	{
-		const devid::ScopeMapping m = devid::map_legacy_scope(scope);
-		devid::LaunchConfig config;
-		config.hooks = m.hooks;
-		config.capabilities = m.capabilities;
-		return devid::make_hook_plan(config);
-	};
-	const devid::HookPlan device = plan("device");
-	CHECK(!device.isolation && device.storage && device.storageAsync && device.storageWait && device.network && device.wmi);
-	const devid::HookPlan async = plan("device-async");
-	CHECK(!async.isolation && async.storage && async.storageAsync && !async.storageWait && async.network && async.wmi);
-	const devid::HookPlan minimal = plan("device-minimal");
-	CHECK(!minimal.isolation && minimal.storage && minimal.storageAsync && !minimal.storageWait && !minimal.network && !minimal.wmi);
-	const devid::HookPlan process = plan("process");
-	CHECK(process.processPropagation && !process.isolation && !process.storage);
 }
 
 TEST(launch_config_roundtrip_and_invariants)
@@ -448,7 +417,6 @@ TEST(launch_config_roundtrip_and_invariants)
 	devid::LaunchConfig config;
 	config.sessionId = 0xABCDEF;
 	config.objectNamespaceId = 0x1122334455667788ULL;
-	config.hooks = devid::kHookIsolation;
 	config.capabilities = devid::kCapStorage | devid::kCapSmbios | devid::kCapWmi;
 	config.profile = make_profile(51);
 	const auto decoded = devid::decode_launch_config(devid::encode_launch_config(config));

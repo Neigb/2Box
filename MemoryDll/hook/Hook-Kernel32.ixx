@@ -685,10 +685,10 @@ namespace hook
 
 	// Which Kernel32 hooks exist is decided entirely by the launch plan (see DeviceLaunch.hpp):
 	//   always       CreateProcess*/WinExec, so children receive the same launch configuration
-	//   isolation    named pipes, boundary descriptors, OpenProcess
+	//   always       named pipes, boundary descriptors, OpenProcess (isolation)
 	//   storage      DeviceIoControl;  storageAsync: overlapped completion;  storageWait: wait-based completion (experimental)
 	//   smbios       GetSystemFirmwareTable
-	void hook_kernel32(bool isolation, bool storage, bool storageAsync, bool storageWait, bool smbios)
+	void hook_kernel32(bool storage, bool storageAsync, bool storageWait, bool smbios)
 	{
 		constexpr auto KERNEL32_LIB_NAME = utils::make_literal_name<L"kernel32.dll">();
 		sys_info::SysDllMapHelper kernel32Mapped = sys_info::get_kernel32_mapped();
@@ -706,17 +706,14 @@ namespace hook
 		return HookInfo{&name<trampolineConst.value>}; \
 	})
 
-		if (isolation)
-		{
-			CREATE_HOOK_BY_NAME(WaitNamedPipeA);
-			CREATE_HOOK_BY_NAME(WaitNamedPipeW);
-			CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorA);
-			CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorW);
-		}
+		CREATE_HOOK_BY_NAME(WaitNamedPipeA);
+		CREATE_HOOK_BY_NAME(WaitNamedPipeW);
+		CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorA);
+		CREATE_HOOK_BY_NAME(CreateBoundaryDescriptorW);
 		CREATE_HOOK_BY_NAME(CreateProcessA);
 		pCreateProcessTrampolineW = std::addressof(CREATE_HOOK_BY_NAME(CreateProcessW).funcAddress);
 		CREATE_HOOK_BY_NAME(WinExec);
-		if (isolation) CREATE_HOOK_BY_NAME(OpenProcess);
+		CREATE_HOOK_BY_NAME(OpenProcess);
 		if (storage) CREATE_HOOK_BY_NAME(DeviceIoControl);
 		if (storage && storageAsync)
 		{

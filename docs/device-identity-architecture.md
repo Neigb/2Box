@@ -210,7 +210,7 @@ capabilities = storage, storage-async, network, smbios, wmi
 ```
 
 - 子进程继承根进程的能力集（它们属于同一个被测应用）；解析出错（未知能力名等）会让启动失败并提示，而不是静默当作"未配置"。
-- 兼容开关 `WORKSPACE_HOOK_SCOPE`（CI 用）由**宿主**映射为 `LaunchConfig`，DLL 不再读取环境变量。未设置时 = 普通多开。
+- 不再有环境变量开关：`WORKSPACE_HOOK_SCOPE` 已删除，CI 也通过策略文件启用。隔离类 Hook 始终安装，不存在"只装设备 Hook、不装隔离"的模式。
 
 ### 2.7 Capability 与一致性规则、HookPlan
 
@@ -259,6 +259,6 @@ wmi（且有数据域）   → Ole32/COM + WMI 虚表
 | Iphlpapi / Netapi32 | **改为 Capability** `network` | 默认不再安装 |
 | WMI `ProcessorId` 改写 | **删除** | 与 CPUID 矛盾 |
 | `GlobalData` 里的 `envFlag` 哈希、缓存表、互斥锁 | **删除** | 由 `DeviceIdentityProvider` 取代（仅保留小型别名表保证幂等） |
-| DLL 内读取 `WORKSPACE_HOOK_SCOPE` | **删除** | 宿主映射后经 payload 传入 |
+| `WORKSPACE_HOOK_SCOPE` 环境变量（含宿主侧映射与非隔离模式） | **删除** | 启用只走策略文件；隔离始终开启 |
 | `GetSystemFirmwareTable` | **新增**（Capability `smbios`） | 低频 API，与 WMI UUID/序列号同源一致 |
 

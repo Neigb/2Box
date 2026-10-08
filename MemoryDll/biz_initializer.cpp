@@ -161,8 +161,6 @@ void initialize_rpc()
 
 void initialize_hook()
 {
-	const devid::HookPlan& plan = global::Data::get().hookPlan();
-	probe_trace(plan.isolation ? "hook plan isolation" : "hook plan without isolation");
 	if (global::Data::get().storageSimulated()) probe_trace("device storage simulated");
 	if (global::Data::get().networkSimulated()) probe_trace("device network simulated");
 	if (global::Data::get().smbiosSimulated()) probe_trace("device smbios simulated");
