@@ -9,7 +9,7 @@
 | `common/device_identity/` 核心库（纯标准 C++） | 已在本机用 clang（`-Wall -Wextra -Wpedantic -Werror`，ASan + UBSan）编译并通过全部测试 |
 | `tests/device_identity_tests.cpp`（156 项检查） | 通过；另做了 4 组变异验证（去掉域隔离、MAC 忽略盐、去掉别名表、UUID 取自来源值），测试都能抓到 |
 | 宿主/DLL 的 Windows 接线（`Launcher`、`Env*`、`GlobalData`、`Hook-*`、`dllmain`、`biz_initializer`） | **未编译、未运行**。开发机是 macOS，没有 MSVC。改动已逐处静态核对，但需要 GitHub Actions 的 4 种 Windows 构建来确认 |
-| Windows 运行探针（基线 vs 托管，含新增的 SMBIOS 表 vs WMI 交叉检查） | **未运行**。原有的 `device-async` 探针步骤保持阻塞；新增的"默认模式"和"按应用策略"两个步骤标为 `continue-on-error`，在 Windows runner 上确认通过后再去掉 |
+| Windows 构建与运行探针（基线 vs 托管，SMBIOS 表 vs WMI 交叉检查，默认模式，按应用策略 + `MachineGuid`） | 已在 GitHub Actions 的 Windows runner 上通过（4 种构建 + Release x64 全部探针），三个探针步骤均为阻塞检查。两批探针（宿主重启前后）读到的画像值逐项相同，印证重启后身份稳定。runner 磁盘无可读序列号，存储序列号改写路径未被真实数据覆盖 |
 
 需要特别留意的编译风险点：模块接口单元（`GlobalData.ixx`、`Env-Envrironment.ixx`）在全局模块片段里 `#include` 了标准库头文件；`biz_initializer.cpp` 早已是"先 include 头再 `import std`"的写法，说明这个组合在当前工具链可用，但全局模块片段里的用法是新的。
 

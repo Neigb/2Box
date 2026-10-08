@@ -175,11 +175,8 @@ jobs:
             throw
           }
 
-      # The two steps below exercise the new launch-config path (policy file, default mode). They are informational
-      # until they have been seen passing on a Windows runner; promote them by removing continue-on-error.
       - name: Probe default multi-instance mode (device simulation must stay off)
         if: matrix.configuration == 'Release' && matrix.platform == 'x64'
-        continue-on-error: true
         shell: pwsh
         timeout-minutes: 5
         run: |
@@ -202,7 +199,6 @@ jobs:
 
       - name: Probe per-application device policy
         if: matrix.configuration == 'Release' && matrix.platform == 'x64'
-        continue-on-error: true
         shell: pwsh
         timeout-minutes: 5
         run: |
