@@ -33,43 +33,30 @@ namespace hook
 
 	bool contains_toplevel_window_in_other_env(void* hWnd)
 	{
-		try
-		{
-			const rpc::ClientDefault c;
-			return c.containsToplevelWindowExclude(hWnd, global::Data::get().envFlag());
-		}
-		catch (...)
-		{
-		}
-		return true;
+		return rpc::other_env_windows().contains(global::Data::get().envFlag(), reinterpret_cast<std::uint64_t>(hWnd));
 	}
 
 	std::vector<HWND> get_all_toplevel_window_in_other_env()
 	{
 		std::vector<HWND> result;
-		try
+		const auto windows = rpc::other_env_windows().get(global::Data::get().envFlag());
+		if (!windows)
 		{
-			const rpc::ClientDefault c;
-			std::uint64_t hWnds[rpc::MAX_TOPLEVEL_WND_COUNT]{};
-			std::uint32_t count = rpc::MAX_TOPLEVEL_WND_COUNT;
-			c.getAllToplevelWindowExclude(global::Data::get().envFlag(), hWnds, &count);
-			result.reserve(count);
-			for (std::uint32_t i = 0; i < count; ++i)
-			{
-				HWND hWnd = reinterpret_cast<HWND>(hWnds[i]);
-				if (GetWindowExStyle(hWnd) & WS_EX_TOOLWINDOW)
-				{
-					continue;
-				}
-				if (const HWND owner = GetWindow(hWnd, GW_OWNER); owner && !IsWindowVisible(owner))
-				{
-					continue;
-				}
-				result.push_back(hWnd);
-			}
+			return result;
 		}
-		catch (...)
+		result.reserve(windows->size());
+		for (const std::uint64_t handle : *windows)
 		{
+			HWND hWnd = reinterpret_cast<HWND>(handle);
+			if (GetWindowExStyle(hWnd) & WS_EX_TOOLWINDOW)
+			{
+				continue;
+			}
+			if (const HWND owner = GetWindow(hWnd, GW_OWNER); owner && !IsWindowVisible(owner))
+			{
+				continue;
+			}
+			result.push_back(hWnd);
 		}
 		return result;
 	}

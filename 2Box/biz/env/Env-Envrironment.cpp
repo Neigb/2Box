@@ -351,6 +351,7 @@ namespace biz
 		const std::shared_ptr<ProcessInfo> newProcInfo = std::make_shared<ProcessInfo>(pid);
 		if (addProcessInternal(newProcInfo))
 		{
+			consumePendingLaunch(newProcInfo->getProcessFullPath());
 			m_waiter.addWait(newProcInfo->getHandle(), [this, newProcInfo]
 			{
 				removeProcessInternal(newProcInfo);
@@ -385,10 +386,59 @@ namespace biz
 		return m_processes.getPids();
 	}
 
+	namespace
+	{
+		constexpr std::chrono::seconds pendingLaunchLifetime{15};
+
+		bool same_path(std::wstring_view a, std::wstring_view b)
+		{
+			return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
+				[](wchar_t x, wchar_t y) { return std::towlower(x) == std::towlower(y); });
+		}
+	}
+
 	bool Env::contains(const std::wstring& procFullName) const
 	{
-		std::shared_lock lock(m_mutex);
-		return m_processes.contains(procFullName);
+		{
+			std::shared_lock lock(m_mutex);
+			if (m_processes.contains(procFullName))
+			{
+				return true;
+			}
+		}
+		return hasPendingLaunch(procFullName);
+	}
+
+	void Env::addPendingLaunch(std::wstring_view exePath)
+	{
+		const auto now = std::chrono::steady_clock::now();
+		std::lock_guard lock(m_pendingMutex);
+		std::erase_if(m_pendingLaunches, [&](const PendingLaunch& item) { return now - item.since > pendingLaunchLifetime; });
+		for (PendingLaunch& item : m_pendingLaunches)
+		{
+			if (same_path(item.path, exePath))
+			{
+				item.since = now;
+				return;
+			}
+		}
+		m_pendingLaunches.push_back(PendingLaunch{std::wstring{exePath}, now});
+	}
+
+	bool Env::hasPendingLaunch(std::wstring_view exePath) const
+	{
+		const auto now = std::chrono::steady_clock::now();
+		std::lock_guard lock(m_pendingMutex);
+		return std::any_of(m_pendingLaunches.begin(), m_pendingLaunches.end(), [&](const PendingLaunch& item)
+		{
+			return now - item.since <= pendingLaunchLifetime && same_path(item.path, exePath);
+		});
+	}
+
+	void Env::consumePendingLaunch(std::wstring_view exePath)
+	{
+		std::lock_guard lock(m_pendingMutex);
+		std::erase_if(m_pendingLaunches, [&](const PendingLaunch& item) { return same_path(item.path, exePath); });
 	}
 
 	void Env::setProcCountChangeNotify(ProcCountChangeNotify notify)

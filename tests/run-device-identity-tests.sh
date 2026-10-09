@@ -13,3 +13,8 @@ fi
 "$cxx" -std=c++20 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined \
   -I"$root/common/device_identity" "$here/device_identity_tests.cpp" -o "$out"
 "$out"
+
+snap=${TMPDIR:-/tmp}/other_env_snapshot_tests
+"$cxx" -std=c++20 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -pthread \
+  -I"$root/MemoryDll/rpc" "$here/other_env_snapshot_tests.cpp" -o "$snap"
+"$snap"

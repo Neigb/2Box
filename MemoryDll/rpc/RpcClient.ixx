@@ -1,6 +1,7 @@
 // ReSharper disable CppFunctionalStyleCast
 module;
 #include "service_h.h"
+#include "rpc/OtherEnvSnapshot.hpp"
 export module RpcClient;
 
 import std;
@@ -262,5 +263,54 @@ namespace rpc
 		__except (RpcExceptionFilter(RpcExceptionCode()))
 		{
 		}
+	}
+
+	export using OtherEnvSnapshot = ::OtherEnvSnapshot;
+
+	namespace detail
+	{
+		inline std::optional<OtherEnvSnapshot::IdSet> fetch_other_env_windows(unsigned long long envFlag)
+		{
+			const ClientDefault c;
+			std::uint64_t hWnds[MAX_TOPLEVEL_WINDOW]{};
+			std::uint32_t count = MAX_TOPLEVEL_WINDOW;
+			c.getAllToplevelWindowExclude(envFlag, hWnds, &count);
+			OtherEnvSnapshot::IdSet result;
+			result.reserve(count);
+			for (std::uint32_t i = 0; i < count && i < MAX_TOPLEVEL_WINDOW; ++i)
+			{
+				result.insert(hWnds[i]);
+			}
+			return result;
+		}
+
+		inline std::optional<OtherEnvSnapshot::IdSet> fetch_other_env_processes(unsigned long long envFlag)
+		{
+			const ClientDefault c;
+			std::uint64_t pids[MAX_PIDS]{};
+			std::uint32_t count = MAX_PIDS;
+			c.getAllProcessIdExclude(envFlag, pids, &count);
+			OtherEnvSnapshot::IdSet result;
+			result.reserve(count);
+			for (std::uint32_t i = 0; i < count && i < MAX_PIDS; ++i)
+			{
+				result.insert(pids[i]);
+			}
+			return result;
+		}
+	}
+
+	// Top-level windows owned by other environments (and the host itself).
+	export OtherEnvSnapshot& other_env_windows()
+	{
+		static OtherEnvSnapshot snapshot{&detail::fetch_other_env_windows, std::chrono::milliseconds{100}};
+		return snapshot;
+	}
+
+	// Processes of other environments (and the host process).
+	export OtherEnvSnapshot& other_env_processes()
+	{
+		static OtherEnvSnapshot snapshot{&detail::fetch_other_env_processes, std::chrono::milliseconds{200}};
+		return snapshot;
 	}
 }

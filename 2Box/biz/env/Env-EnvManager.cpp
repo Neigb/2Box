@@ -233,6 +233,8 @@ namespace biz
 		std::vector<std::shared_ptr<Env>> allEnv = getAllEnv();
 		std::vector<void*> result;
 		result.reserve(allEnv.size() * 4);
+		// The host's own window is never visible to managed processes (same answer containsToplevelWindowExclude gives).
+		result.push_back(ui::main_wnd().nativeHandle());
 		for (const std::shared_ptr<Env>& env : allEnv)
 		{
 			if (env->getFlag() == excludeEnvFlag)

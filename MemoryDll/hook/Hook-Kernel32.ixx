@@ -239,15 +239,7 @@ namespace hook
 
 	bool contains_process_id_in_other_env(DWORD dwProcessId)
 	{
-		try
-		{
-			const rpc::ClientDefault c;
-			return c.containsProcessIdExclude(dwProcessId, global::Data::get().envFlag());
-		}
-		catch (...)
-		{
-		}
-		return true;
+		return rpc::other_env_processes().contains(global::Data::get().envFlag(), dwProcessId);
 	}
 
 	template <auto Trampoline>

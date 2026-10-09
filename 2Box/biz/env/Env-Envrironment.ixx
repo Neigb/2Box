@@ -198,7 +198,11 @@ namespace biz
 		std::vector<std::shared_ptr<ProcessInfo>> getAllProcesses() const;
 		std::shared_ptr<ProcessInfo> getProcess(DWORD pid) const;
 		std::vector<DWORD> getAllProcessIds() const;
+		// True if this environment runs, or has just been asked to start, the given executable.
 		bool contains(const std::wstring& procFullName) const;
+		// Records a launch that has been requested but whose process has not logged in yet, so that a second launch of the
+		// same executable is not placed in this environment merely because the first one is slow to register.
+		void addPendingLaunch(std::wstring_view exePath);
 
 		enum class EProcEvent:std::uint8_t
 		{
@@ -216,6 +220,8 @@ namespace biz
 
 	private:
 		bool addProcessInternal(const std::shared_ptr<ProcessInfo>& procInfo);
+		bool hasPendingLaunch(std::wstring_view exePath) const;
+		void consumePendingLaunch(std::wstring_view exePath);
 		bool removeProcessInternal(const std::shared_ptr<ProcessInfo>& procInfo);
 		void removeToplevelWindowWhenProcessTerminate(const std::shared_ptr<ProcessInfo>& procInfo);
 
@@ -225,6 +231,15 @@ namespace biz
 		std::wstring m_flagName;
 		std::wstring m_name;
 		std::atomic<std::uint64_t> m_deviceProfileId{0};
+
+		struct PendingLaunch
+		{
+			std::wstring path;
+			std::chrono::steady_clock::time_point since;
+		};
+
+		mutable std::mutex m_pendingMutex;
+		std::vector<PendingLaunch> m_pendingLaunches;
 
 		HandleWaiter m_waiter;
 		mutable std::shared_mutex m_mutex;

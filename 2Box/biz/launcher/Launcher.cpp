@@ -149,6 +149,8 @@ namespace biz
 		{
 			env = env_mgr().createEnv();
 		}
+		// Tell the environment a launch of this executable is under way (consumed when the process logs in).
+		env->addPendingLaunch(exePath);
 		// Resolve before creating the process: a damaged profile or policy file must fail the launch, not start a different machine.
 		const devid::LaunchConfig launchConfig = resolve_launch_config(env, exePath);
 		const PROCESS_INFORMATION procInfo = create_and_inject(env.get(), exePath, params, launchConfig);

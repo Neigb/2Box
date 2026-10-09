@@ -55,6 +55,10 @@ namespace ui
 			}
 			result = box->getEnv();
 			box->setBusyTemp();
+			if (isExe)
+			{
+				result->addPendingLaunch(procFullPath);
+			}
 			break;
 		}
 		return result;

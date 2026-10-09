@@ -612,25 +612,9 @@ namespace hook
 	// 	return trampoline(ObjectAttributes);
 	// }
 
-	std::unordered_set<std::uint64_t> GetAllProcessInOtherEnv()
+	std::shared_ptr<const std::unordered_set<std::uint64_t>> GetAllProcessInOtherEnv()
 	{
-		std::unordered_set<std::uint64_t> allProc;
-		try
-		{
-			const rpc::ClientDefault c;
-			std::uint64_t pids[rpc::MAX_PID_COUNT]{};
-			std::uint32_t count = rpc::MAX_PID_COUNT;
-			c.getAllProcessIdExclude(global::Data::get().envFlag(), pids, &count);
-			allProc.reserve(count);
-			for (std::uint32_t i = 0; i < count; ++i)
-			{
-				allProc.insert(pids[i]);
-			}
-		}
-		catch (...)
-		{
-		}
-		return allProc;
+		return rpc::other_env_processes().get(global::Data::get().envFlag());
 	}
 
 	template <auto trampoline>
@@ -644,8 +628,8 @@ namespace hook
 
 		if (SystemInformationClass == SystemProcessInformation)
 		{
-			const std::unordered_set<std::uint64_t> allProcInOtherEnv = GetAllProcessInOtherEnv();
-			if (allProcInOtherEnv.empty())
+			const std::shared_ptr<const std::unordered_set<std::uint64_t>> otherProcesses = GetAllProcessInOtherEnv();
+			if (!otherProcesses || otherProcesses->empty())
 			{
 				return ret;
 			}
@@ -668,7 +652,7 @@ namespace hook
 				{
 					return ret;
 				}
-				if (!entry->UniqueProcessId || !allProcInOtherEnv.contains(reinterpret_cast<ULONG_PTR>(entry->UniqueProcessId)))
+				if (!entry->UniqueProcessId || !otherProcesses->contains(reinterpret_cast<ULONG_PTR>(entry->UniqueProcessId)))
 				{
 					visibleOffsets.push_back(offset);
 				}
